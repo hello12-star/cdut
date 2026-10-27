@@ -97,6 +97,9 @@ fun CasLoginScreen(
     var showWebView by remember { mutableStateOf(false) }   // 仅在需要验证码时展开
     var pageReady by remember { mutableStateOf(false) }
     var handled by remember { mutableStateOf(false) }
+    // 已点过「登录」：超时把 busy 置 false 之后，WebView 仍可能稍后成功，
+    // 用这个标记让成功判定不依赖 busy，避免"其实登上了但 App 不认"
+    var loginSubmitted by remember { mutableStateOf(false) }
     var webRef by remember { mutableStateOf<WebView?>(null) }
     var retryCount = 0
     val scope = rememberCoroutineScope()
@@ -133,13 +136,15 @@ fun CasLoginScreen(
         }
     }
 
-    // 登录超时保护
+    // 登录超时保护。
+    // 走 VPN 后链路变长（vpn.cdut.edu.cn → CAS → 回跳 VPN → 建会话），
+    // 25 秒经常不够，放宽到 45 秒再判失败。
     LaunchedEffect(busy) {
         if (busy) {
-            delay(25_000)
+            delay(45_000)
             if (busy) {
                 busy = false
-                error = "登录超时，请检查网络后重试"
+                error = "登录超时，请检查网络后重试（VPN 链路较慢时可多等一会再重试）"
             }
         }
     }
@@ -185,6 +190,7 @@ fun CasLoginScreen(
     /** 注入账密并自动点「登录」 */
     fun submit(view: WebView) {
         busy = true
+        loginSubmitted = true
         error = null
         status = "正在登录…"
         val js = """
@@ -352,6 +358,10 @@ fun CasLoginScreen(
                         // VPN 登录页 / 代理页会 http↔https 混用，默认策略会拦掉子资源
                         settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                         CookieManager.getInstance().setAcceptCookie(true)
+                        // 关键：登录链是跨域的（vpn.cdut.edu.cn → cas.paas.cdut.edu.cn → 回跳），
+                        // CAS 的 TGC 属于第三方 cookie。WebView 默认拒绝，
+                        // 表现就是"认证过了但说没有可信凭证"。必须显式打开。
+                        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                         webRef = this
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView?, url: String?) {
@@ -376,7 +386,9 @@ fun CasLoginScreen(
                                     u.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) ||
                                             u.contains("vpn.cdut.edu.cn/por") ||
                                             u.contains("jw.cdut.edu.cn") -> {
-                                        if (!handled && (busy || showWebView)) {                                            handled = true
+                                        if (!handled && (busy || loginSubmitted || showWebView)) {                                            handled = true
+                                            loginSubmitted = false
+                                            busy = false
                                             status = "登录成功，正在保存…"
                                             scope.launch {
                                                 delay(2000)
