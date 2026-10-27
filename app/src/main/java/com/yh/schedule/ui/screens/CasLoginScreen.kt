@@ -144,6 +144,7 @@ fun CasLoginScreen(
             delay(45_000)
             if (busy) {
                 busy = false
+                status = "登录未完成"   // 同步重置，避免残留在"正在登录…"
                 error = "登录超时，请检查网络后重试（若反复失败，可点到「服务」页重新登录）"
             }
         }
@@ -193,6 +194,7 @@ fun CasLoginScreen(
         loginSubmitted = true
         error = null
         status = "正在登录…"
+        error = null       // 重新发起时清掉上一轮的红字
         val js = """
             (function(){
               function setVal(id, v){
@@ -313,16 +315,15 @@ fun CasLoginScreen(
             }
 
             Spacer(Modifier.height(10.dp))
+            // 只显示一条：有错误就只显示错误，否则显示进度文案。
+            // 之前 status 无条件渲染 + error 再渲染一行，会出现
+            // "正在登录…" 和 "登录超时" 同时挂在界面上的矛盾状态。
             Text(
-                status,
+                text = error ?: status,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (error != null) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.primary,
             )
-            error?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error)
-            }
 
             Spacer(Modifier.height(10.dp))
             Text(
