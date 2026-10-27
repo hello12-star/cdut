@@ -144,10 +144,7 @@ fun CasLoginScreen(
             delay(45_000)
             if (busy) {
                 busy = false
-                error = "登录超时。已展开网页，可在页面上手动完成登录"
-                // VPN 的 ticket 是一次性的，自动流程一旦踩空就再也过不去；
-                // 展开真实页面让用户手动接管，是唯一可靠的兜底
-                showWebView = true
+                error = "登录超时，请检查网络后重试（若反复失败，可点到「服务」页重新登录）"
             }
         }
     }
@@ -366,6 +363,32 @@ fun CasLoginScreen(
                         // 表现就是"认证过了但说没有可信凭证"。必须显式打开。
                         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                         webRef = this
+                        // 接管 target="_blank" / window.open：
+                        // 门户里的「教务管理系统」入口常是新窗口链接，WebView 默认不处理，
+                        // 点了等于没点，表现为"停着不动 / 未取到会话凭据"
+                        webChromeClient = object : android.webkit.WebChromeClient() {
+                            override fun onCreateWindow(
+                                view: WebView,
+                                isDialog: Boolean,
+                                isUserGesture: Boolean,
+                                resultMsg: android.os.Message,
+                            ): Boolean {
+                                val holder = WebView(view.context)
+                                holder.webViewClient = object : WebViewClient() {
+                                    override fun shouldOverrideUrlLoading(
+                                        v: WebView,
+                                        request: android.webkit.WebResourceRequest,
+                                    ): Boolean {
+                                        view.loadUrl(request.url.toString())
+                                        return true
+                                    }
+                                }
+                                (resultMsg.obj as WebView.WebViewTransport).webView = holder
+                                resultMsg.sendToTarget()
+                                return true
+                            }
+                        }
+
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 val u = url.orEmpty()

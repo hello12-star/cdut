@@ -371,20 +371,32 @@ internal fun TimetableScraper(
                     val js = "(function(){" +
                             "function tryDoc(d){" +
                             "  if(!d) return null;" +
-                            "  var as=d.querySelectorAll('a,div[onclick],li');" +
+                            "  var as=d.querySelectorAll('a');" +
                             "  for(var i=0;i<as.length;i++){" +
                             "    var t=(as[i].innerText||'')+(as[i].title||'');" +
                             "    if(t.indexOf('教务')>=0){" +
+                            // 门户里的入口常是 target=_blank，WebView 点了不会在当前窗口导航，
+                            // 所以优先直接改 location，绕开新窗口
+                            "      var h=as[i].href||'';" +
+                            "      if(h && h.indexOf('javascript')!==0 && h!=='#' && h.indexOf('void')<0){" +
+                            "        location.href=h; return 'NAV:'+h.slice(0,80);" +
+                            "      }" +
                             "      if(as[i].click) as[i].click();" +
                             "      return 'CLICKED:'+((as[i].innerText||'').slice(0,20));" +
+                            "    }" +
+                            "  }" +
+                            "  var cards=d.querySelectorAll('div[onclick],li[onclick],span[onclick]');" +
+                            "  for(var j=0;j<cards.length;j++){" +
+                            "    if((cards[j].innerText||'').indexOf('教务')>=0){" +
+                            "      cards[j].click(); return 'CLICKED_DIV';" +
                             "    }" +
                             "  }" +
                             "  return null;" +
                             "}" +
                             "var r=tryDoc(document); if(r) return r;" +
                             "var ifr=document.querySelectorAll('iframe');" +
-                            "for(var j=0;j<ifr.length;j++){" +
-                            "  try{var r2=tryDoc(ifr[j].contentDocument); if(r2) return r2;}catch(e){}" +
+                            "for(var k=0;k<ifr.length;k++){" +
+                            "  try{var r2=tryDoc(ifr[k].contentDocument); if(r2) return r2;}catch(e){}" +
                             "}" +
                             "return 'NO_LINK';})()"
                     view.evaluateJavascript(js) { raw ->
