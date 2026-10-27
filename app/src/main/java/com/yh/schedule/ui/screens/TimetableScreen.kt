@@ -298,6 +298,17 @@ internal fun TimetableScraper(
                 var retry = 0
                 var warmedUp = false
                 var grabbed = false
+                // 记录访问过的 URL 轨迹：失败时一并回传给界面，
+                // 这样不用连电脑抓日志也能看出卡在哪一跳
+                val urlTrail = mutableListOf<String>()
+                fun trail(u: String) {
+                    val short = u.substringAfter("://").take(70)
+                    if (urlTrail.lastOrNull() != short) {
+                        if (urlTrail.size >= 6) urlTrail.removeAt(0)
+                        urlTrail.add(short)
+                    }
+                }
+                fun trailText(): String = urlTrail.joinToString(" → ")
 
                 fun grab(view: WebView, attempt: Int = 0) {
                     if (grabbed) return
@@ -424,7 +435,10 @@ internal fun TimetableScraper(
                                     "(location.href+' || '+((document.body&&document.body.innerText)?"
                                         + "document.body.innerText.replace(/\\s+/g,' ').slice(0,60):''))"
                                 ) { info ->
-                                    onFail("门户里没找到教务入口｜当前页: " + decodeJsString(info))
+                                    onFail(
+                                        "门户里没找到教务入口｜当前页: " + decodeJsString(info) +
+                                                "｜轨迹: " + trailText()
+                                    )
                                 }
                             }
                         }
@@ -434,6 +448,7 @@ internal fun TimetableScraper(
                 fun inspect(view: WebView) {
                     view.evaluateJavascript("location.href") { raw ->
                         val u = decodeJsString(raw)
+                        trail(u)
                         when {
                             u.contains("cas.paas.cdut.edu.cn") || u.contains("sso/login") -> {
                                 if (retry < 3) {
@@ -467,7 +482,7 @@ internal fun TimetableScraper(
                                         3000,
                                     )
                                 } else {
-                                    onFail("未能进入课表页，请重试")
+                                    onFail("未能进入课表页｜轨迹: " + trailText())
                                 }
                             }
                         }
