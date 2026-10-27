@@ -62,12 +62,10 @@ private fun String.jsEscape(): String =
  */
 /**
  * 浏览器（隐藏 WebView）的起始地址。
- *
- * 走 VPN 的 CAS 入口而不是教务的：认证成功后同时拿到 VPN 会话与 TGC，
- * 后续访问 `jw-cdut-edu-cn-s.vpn.cdut.edu.cn:8118` 的教务页面会自动放行。
- * （校外直连 jw.cdut.edu.cn 不通，见 [com.yh.schedule.core.WebConst] 的说明）
+ * 具体走教务 CAS 还是 VPN 的 CAS，由 [com.yh.schedule.core.WebConst.USE_VPN] 决定。
  */
-private const val CAS_LOGIN_URL = com.yh.schedule.core.WebConst.VPN_CAS_LOGIN_URL
+private val CAS_LOGIN_URL: String
+    get() = com.yh.schedule.core.WebConst.CAS_LOGIN_URL
 
 /**
  * 登录页（**只有这一个原生界面，官网登录页不出现**）。

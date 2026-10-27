@@ -478,7 +478,7 @@ internal fun TimetableScraper(
                                 if (retry < 3) {
                                     retry++
                                     view.postDelayed(
-                                        { view.loadUrl(com.yh.schedule.core.WebConst.PORTAL_URL) },
+                                        { view.loadUrl(com.yh.schedule.core.WebConst.SCRAPE_ENTRY_URL) },
                                         3000,
                                     )
                                 } else {
@@ -494,10 +494,16 @@ internal fun TimetableScraper(
                         if (view == null) return
                         if (!warmedUp) {
                             warmedUp = true
-                            // 首次落地的通常是 VPN 登录后的门户页，不能强制跳课表：
-                            // 教务必须从门户点「教务管理系统」走 SSO 进来。
-                            // 交给 inspect 按当前 URL 决定下一步。
-                            view.postDelayed({ inspect(view) }, 4500)
+                            if (com.yh.schedule.core.WebConst.USE_VPN) {
+                                // VPN：首屏是门户，交给 inspect 去点「教务管理系统」
+                                view.postDelayed({ inspect(view) }, 4500)
+                            } else {
+                                // 直连：首屏是教务首页，直接去课表
+                                view.postDelayed(
+                                    { view.loadUrl(com.yh.schedule.core.WebConst.JW_TIMETABLE_URL) },
+                                    3000,
+                                )
+                            }
                             return
                         }
                         view.postDelayed({ inspect(view) }, 4500)
@@ -514,9 +520,8 @@ internal fun TimetableScraper(
                     }
                 }
                 webView = this
-                // 起始页是智慧校园门户，不是教务：教务必须从门户点「教务管理系统」走 SSO，
-                // 直连 jw 代理域会因缺少 SSO 票据报「未取到会话凭据」
-                loadUrl(com.yh.schedule.core.WebConst.PORTAL_URL)
+                // 起始页由开关决定：VPN 模式先进门户，直连模式直接进教务
+                loadUrl(com.yh.schedule.core.WebConst.SCRAPE_ENTRY_URL)
             }
         },
     )
