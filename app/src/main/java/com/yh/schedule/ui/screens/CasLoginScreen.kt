@@ -349,6 +349,8 @@ fun CasLoginScreen(
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
                         settings.databaseEnabled = true
+                        // VPN 登录页 / 代理页会 http↔https 混用，默认策略会拦掉子资源
+                        settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                         CookieManager.getInstance().setAcceptCookie(true)
                         webRef = this
                         webViewClient = object : WebViewClient() {

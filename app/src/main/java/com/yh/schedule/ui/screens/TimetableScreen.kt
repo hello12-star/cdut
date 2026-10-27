@@ -289,6 +289,8 @@ internal fun TimetableScraper(
             WebView(ctx).apply {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
+                // VPN 代理走 http，页面里可能夹带 https 资源，默认策略会拦截导致白屏
+                settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 CookieManager.getInstance().setAcceptCookie(true)
 
                 var retry = 0
