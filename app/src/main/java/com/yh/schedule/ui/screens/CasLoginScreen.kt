@@ -60,9 +60,14 @@ private fun String.jsEscape(): String =
  * CAS 登录页地址（带 service，登录成功后回到教务 SSO）。
  * service 的 targetUrl = base64("http://jw.cdut.edu.cn/Logon.do?method=logonSSOcdlgdx")
  */
-private const val CAS_LOGIN_URL =
-    "https://cas.paas.cdut.edu.cn/cas/login?service=http%3A%2F%2Fjw.cdut.edu.cn%2Fsso%2Flogin.jsp" +
-            "%3FtargetUrl%3Dbase64aHR0cDovL2p3LmNkdXQuZWR1LmNuL0xvZ29uLmRvP21ldGhvZD1sb2dvblNTT2NkbGdkeA%3D%3D"
+/**
+ * 浏览器（隐藏 WebView）的起始地址。
+ *
+ * 走 VPN 的 CAS 入口而不是教务的：认证成功后同时拿到 VPN 会话与 TGC，
+ * 后续访问 `jw-cdut-edu-cn-s.vpn.cdut.edu.cn:8118` 的教务页面会自动放行。
+ * （校外直连 jw.cdut.edu.cn 不通，见 [com.yh.schedule.core.WebConst] 的说明）
+ */
+private const val CAS_LOGIN_URL = com.yh.schedule.core.WebConst.VPN_CAS_LOGIN_URL
 
 /**
  * 登录页（**只有这一个原生界面，官网登录页不出现**）。
@@ -362,7 +367,13 @@ fun CasLoginScreen(
                                             u.contains("LoginToXk") -> {
                                         status = "正在建立教务会话…"
                                     }
-                                    u.contains("jw.cdut.edu.cn") -> {
+                                    // 三种都算登录成功：
+                                    // ① VPN 门户（走 VPN 的 CAS 登录后会落在这里）
+                                    // ② 教务内网直连（历史路径，保留兼容）
+                                    // ③ 教务 VPN 代理域
+                                    u.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) ||
+                                            u.contains("vpn.cdut.edu.cn/por") ||
+                                            u.contains("jw.cdut.edu.cn") -> {
                                         if (!handled && (busy || showWebView)) {                                            handled = true
                                             status = "登录成功，正在保存…"
                                             scope.launch {
