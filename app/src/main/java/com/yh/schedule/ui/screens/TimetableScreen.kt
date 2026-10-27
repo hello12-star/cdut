@@ -360,12 +360,62 @@ internal fun TimetableScraper(
                     }
                 }
 
+                /**
+                 * 智慧校园门户：找「教务管理系统」入口并点进去。
+                 *
+                 * 为什么要这一步：教务要求从门户走 SSO 单点进入，
+                 * 直接访问 jw 代理域会因为拿不到 SSO 票据报「未取到会话凭据」。
+                 * 门户页面可能是 SPA / 含 iframe，所以 document 和 iframe 都找一遍。
+                 */
+                fun clickJwLink(view: WebView, attempt: Int = 0) {
+                    val js = "(function(){" +
+                            "function tryDoc(d){" +
+                            "  if(!d) return null;" +
+                            "  var as=d.querySelectorAll('a,div[onclick],li');" +
+                            "  for(var i=0;i<as.length;i++){" +
+                            "    var t=(as[i].innerText||'')+(as[i].title||'');" +
+                            "    if(t.indexOf('教务')>=0){" +
+                            "      if(as[i].click) as[i].click();" +
+                            "      return 'CLICKED:'+((as[i].innerText||'').slice(0,20));" +
+                            "    }" +
+                            "  }" +
+                            "  return null;" +
+                            "}" +
+                            "var r=tryDoc(document); if(r) return r;" +
+                            "var ifr=document.querySelectorAll('iframe');" +
+                            "for(var j=0;j<ifr.length;j++){" +
+                            "  try{var r2=tryDoc(ifr[j].contentDocument); if(r2) return r2;}catch(e){}" +
+                            "}" +
+                            "return 'NO_LINK';})()"
+                    view.evaluateJavascript(js) { raw ->
+                        when {
+                            decodeJsString(raw).startsWith("CLICKED") -> {
+                                // 点击后 SSO 会跳转。这里不回调 inspect（局部函数不支持前向引用），
+                                // 直接等 5 秒后看落点再决定下一步。
+                                view.postDelayed({
+                                    view.evaluateJavascript("location.href") { r2 ->
+                                        val u2 = decodeJsString(r2)
+                                        when {
+                                            u2.contains("xskb/xskb_list") -> grab(view)
+                                            u2.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) ->
+                                                view.loadUrl(com.yh.schedule.core.WebConst.JW_TIMETABLE_URL)
+                                            else -> view.loadUrl(com.yh.schedule.core.WebConst.PORTAL_URL)
+                                        }
+                                    }
+                                }, 5000)
+                            }
+                            attempt < 3 -> view.postDelayed({ clickJwLink(view, attempt + 1) }, 3000)
+                            else -> onFail("门户里没找到「教务管理系统」入口，请下拉网页手动点一次")
+                        }
+                    }
+                }
+
                 fun inspect(view: WebView) {
                     view.evaluateJavascript("location.href") { raw ->
                         val u = decodeJsString(raw)
                         when {
                             u.contains("cas.paas.cdut.edu.cn") || u.contains("sso/login") -> {
-                                if (retry < 4) {
+                                if (retry < 3) {
                                     retry++
                                     view.postDelayed({ inspect(view) }, 4000)
                                 } else {
@@ -373,11 +423,28 @@ internal fun TimetableScraper(
                                 }
                             }
                             u.contains("xskb/xskb_list") -> grab(view)
+                            // 门户：从「推荐系统」点「教务管理系统」进去
+                            u.contains("bsdt-") || u.contains("homePage") -> clickJwLink(view)
+                            // 已在教务域但不在课表页 → 直接去课表
+                            u.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) -> {
+                                if (retry < 3) {
+                                    retry++
+                                    view.postDelayed(
+                                        { view.loadUrl(com.yh.schedule.core.WebConst.JW_TIMETABLE_URL) },
+                                        2500,
+                                    )
+                                } else {
+                                    onFail("已进入教务但打不开课表页，请重试")
+                                }
+                            }
                             u.isBlank() -> onFail("无法读取页面地址，请重试")
                             else -> {
-                                if (retry < 4) {
+                                if (retry < 3) {
                                     retry++
-                                    view.postDelayed({ view.loadUrl(com.yh.schedule.core.WebConst.JW_TIMETABLE_URL) }, 3000)
+                                    view.postDelayed(
+                                        { view.loadUrl(com.yh.schedule.core.WebConst.PORTAL_URL) },
+                                        3000,
+                                    )
                                 } else {
                                     onFail("未能进入课表页，请重试")
                                 }
@@ -391,10 +458,10 @@ internal fun TimetableScraper(
                         if (view == null) return
                         if (!warmedUp) {
                             warmedUp = true
-                            view.postDelayed(
-                                { view.loadUrl(com.yh.schedule.core.WebConst.JW_TIMETABLE_URL) },
-                                3000,
-                            )
+                            // 首次落地的通常是 VPN 登录后的门户页，不能强制跳课表：
+                            // 教务必须从门户点「教务管理系统」走 SSO 进来。
+                            // 交给 inspect 按当前 URL 决定下一步。
+                            view.postDelayed({ inspect(view) }, 4500)
                             return
                         }
                         view.postDelayed({ inspect(view) }, 4500)
@@ -411,8 +478,9 @@ internal fun TimetableScraper(
                     }
                 }
                 webView = this
-                // 先访问教务首页触发 SSO，再抓课表（关键：直接抓会被踢回登录页）
-                loadUrl(com.yh.schedule.core.WebConst.JW_HOME_URL)
+                // 起始页是智慧校园门户，不是教务：教务必须从门户点「教务管理系统」走 SSO，
+                // 直连 jw 代理域会因缺少 SSO 票据报「未取到会话凭据」
+                loadUrl(com.yh.schedule.core.WebConst.PORTAL_URL)
             }
         },
     )

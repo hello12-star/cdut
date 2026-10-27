@@ -382,12 +382,12 @@ fun CasLoginScreen(
                                             u.contains("LoginToXk") -> {
                                         status = "正在建立教务会话…"
                                     }
-                                    // 三种都算登录成功：
-                                    // ① VPN 门户（走 VPN 的 CAS 登录后会落在这里）
-                                    // ② 教务内网直连（历史路径，保留兼容）
-                                    // ③ 教务 VPN 代理域
-                                    u.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) ||
+                                    // 四种都算登录成功：
+                                    // ① 智慧校园门户（VPN 登录后的落地页，最常见的成功标志）
+                                    // ② VPN 门户 ③ 教务 VPN 代理域 ④ 教务内网直连（历史路径）
+                                    u.contains("bsdt-cdut") ||
                                             u.contains("vpn.cdut.edu.cn/por") ||
+                                            u.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) ||
                                             u.contains("jw.cdut.edu.cn") -> {
                                         if (!handled && (busy || loginSubmitted || showWebView)) {                                            handled = true
                                             loginSubmitted = false

@@ -23,6 +23,15 @@ object WebConst {
     /** VPN 反向代理域（教务的唯一可用入口） */
     const val VPN_PROXY_HOST = "jw-cdut-edu-cn-s.vpn.cdut.edu.cn:8118"
 
+    /**
+     * 智慧校园门户（办事大厅）。
+     *
+     * VPN 登录后落在这里。**不能直接访问 jw 代理域**：教务要求从门户走 SSO 单点进来，
+     * 直连会因为拿不到 SSO 票据而报「未取到会话凭据」。
+     * 正确路径：门户 → 点「教务管理系统」 → SSO 跳转 → 教务课表页。
+     */
+    const val PORTAL_URL = "http://bsdt-cdut-edu-cn-s.vpn.cdut.edu.cn:8118/EIP/nonlogin/homePage.htm"
+
     /** VPN 的 CAS 登录入口：认证后拿到 VPN 会话，同时持有 TGC 供教务复用 */
     const val VPN_CAS_LOGIN_URL = "https://vpn.cdut.edu.cn/public/cas_login?entry_id=2"
 
