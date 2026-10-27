@@ -144,7 +144,10 @@ fun CasLoginScreen(
             delay(45_000)
             if (busy) {
                 busy = false
-                error = "登录超时，请检查网络后重试（VPN 链路较慢时可多等一会再重试）"
+                error = "登录超时。已展开网页，可在页面上手动完成登录"
+                // VPN 的 ticket 是一次性的，自动流程一旦踩空就再也过不去；
+                // 展开真实页面让用户手动接管，是唯一可靠的兜底
+                showWebView = true
             }
         }
     }
@@ -424,7 +427,9 @@ fun CasLoginScreen(
                             ) {
                                 // 只处理主文档失败；DNS 抖动很常见，重试几次（对齐抓取器的重试策略）
                                 if (request?.isForMainFrame != true) return
-                                if (retryCount < 4) {
+                                // 只重试 2 次：VPN 的 ticket 是一次性的，
+                                // 反复重新加载会把 ticket 消费掉，越重试越拿不到凭据
+                                if (retryCount < 2) {
                                     retryCount++
                                     status = "网络不稳定，正在重试（$retryCount/4）…"
                                     view?.postDelayed({
