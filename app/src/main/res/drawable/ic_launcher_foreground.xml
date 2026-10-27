@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 简约日历图标：白色边框 + 顶部装订 + 中央日期块 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,34 h48 a4,4 0 0 1 4,4 v38 a4,4 0 0 1 -4,4 h-48 a4,4 0 0 1 -4,-4 v-38 a4,4 0 0 1 4,-4 z M30,38 v10 h48 v-10 z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,28 h4 v10 h-4 z M66,28 h4 v10 h-4 z" />
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M34,52 h12 v12 h-12 z M52,52 h12 v12 h-12 z M34,68 h12 v8 h-12 z" />
+</vector>

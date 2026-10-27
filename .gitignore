@@ -1,0 +1,35 @@
+# ---- 构建产物 ----
+build/
+*/build/
+.gradle/
+.kotlin/
+captures/
+
+# ---- 本地环境（体积大，不入库）----
+jdk21/
+gradle-dist/
+*.zip
+local.properties
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+.codebuddy/
+
+# ---- 调试产物 ----
+recon/
+*.log
+*.apk
+*.hprof
+
+# ---- 系统 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 临时脚本 ----
+check_sdk.py
+extract_err.py
+build_log.txt
+wrapper_err.log
