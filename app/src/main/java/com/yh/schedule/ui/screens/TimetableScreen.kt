@@ -417,7 +417,16 @@ internal fun TimetableScraper(
                                 }, 5000)
                             }
                             attempt < 3 -> view.postDelayed({ clickJwLink(view, attempt + 1) }, 3000)
-                            else -> onFail("门户里没找到「教务管理系统」入口，请下拉网页手动点一次")
+                            else -> {
+                                // 把当前 URL 和页面正文片段带出来：失败原因能直接看到，
+                                // 不用靠连电脑抓日志
+                                view.evaluateJavascript(
+                                    "(location.href+' || '+((document.body&&document.body.innerText)?"
+                                        + "document.body.innerText.replace(/\\s+/g,' ').slice(0,60):''))"
+                                ) { info ->
+                                    onFail("门户里没找到教务入口｜当前页: " + decodeJsString(info))
+                                }
+                            }
                         }
                     }
                 }
