@@ -417,12 +417,29 @@ fun CasLoginScreen(
                                             status = "登录成功，正在保存…"
                                             scope.launch {
                                                 delay(2000)
-                                                val casCookie = CookieManager.getInstance()
-                                                    .getCookie("https://cas.paas.cdut.edu.cn")
-                                                val jwCookie = CookieManager.getInstance()
-                                                    .getCookie("https://jw.cdut.edu.cn")
-                                                val merged = listOfNotNull(casCookie, jwCookie)
+                                                val cm = CookieManager.getInstance()
+                                                val casCookie = cm.getCookie("https://cas.paas.cdut.edu.cn")
+                                                val jwCookie = cm.getCookie("https://jw.cdut.edu.cn")
+                                                // VPN 模式下会话 cookie 落在 vpn.cdut.edu.cn 和门户域上，
+                                                // 之前只读 cas / jw 两个域，导致"其实登上了"被判成
+                                                // "未取到会话凭据"——这是 VPN 链路一直失败的真正原因之一。
+                                                val vpnCookie = cm.getCookie("https://vpn.cdut.edu.cn")
+                                                val portalCookie = cm.getCookie(
+                                                    com.yh.schedule.core.WebConst.PORTAL_URL
+                                                )
+
+                                                val directMerged = listOfNotNull(casCookie, jwCookie)
                                                     .joinToString("; ")
+                                                val merged = if (com.yh.schedule.core.WebConst.USE_VPN) {
+                                                    listOfNotNull(
+                                                        directMerged.takeIf { it.isNotBlank() },
+                                                        vpnCookie,
+                                                        portalCookie,
+                                                    ).joinToString("; ")
+                                                } else {
+                                                    directMerged
+                                                }
+
                                                 if (merged.isNotBlank()) {
                                                     repo.onWebLoginSuccess(
                                                         merged,
@@ -434,7 +451,9 @@ fun CasLoginScreen(
                                                 } else {
                                                     handled = false
                                                     busy = false
-                                                    error = "未取到会话凭据，请重试"
+                                                    error = "未取到会话凭据：cas/jw" +
+                                                            (if (com.yh.schedule.core.WebConst.USE_VPN) "/vpn/门户" else "") +
+                                                            " 四个域的 cookie 均为空，请重试"
                                                 }
                                             }
                                         }
