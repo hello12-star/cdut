@@ -72,16 +72,12 @@ fun AppRoot(app: CdutApp) {
         store.loggedIn.collect { value = it }
     }
     var showCasLogin by remember { androidx.compose.runtime.mutableStateOf(false) }
-    val rootScope = androidx.compose.runtime.rememberCoroutineScope()
 
-    // 登录成功（含「刷新登录状态 / 切换账号」）后：清掉上一份课表缓存，并允许下次重新抓取，
-    // 否则换了账号还会看到上一个人的课表
+    // 登录成功后只关掉登录页。不再无条件清课表缓存：
+    // 换账号的清理已移入 Repository.onWebLoginSuccess（按新旧账号比对），
+    // 同账号重登保留上次课表，重登后抓取失败也不会让课表页变空。
     fun onLoginDone() {
         showCasLogin = false
-        rootScope.launch {
-            repo.cacheTimetable(emptyList())
-            repo.resetScrapeGuard()
-        }
     }
 
     when (loggedIn) {
@@ -103,7 +99,10 @@ fun AppRoot(app: CdutApp) {
 fun MainNav(repo: Repository) {
     val nav = rememberNavController()
     var showRelogin by remember { androidx.compose.runtime.mutableStateOf(false) }
-    val reloginScope = androidx.compose.runtime.rememberCoroutineScope()
+
+    // 登录覆盖层打开时，系统返回键只关掉登录页，而不是退出整个应用
+    //（不拦的话系统返回会直接 finish Activity，用户从"服务→刷新登录状态"进来会被踢出 App）
+    androidx.activity.compose.BackHandler(enabled = showRelogin) { showRelogin = false }
 
     androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
         NavHost(navController = nav, startDestination = "main") {
@@ -132,12 +131,8 @@ fun MainNav(repo: Repository) {
                 com.yh.schedule.ui.screens.CasLoginScreen(
                     repo = repo,
                     onSuccess = {
+                        // 与 AppRoot 一致：不清课表缓存，保留策略见 Repository.onWebLoginSuccess
                         showRelogin = false
-                        // 刷新/切换账号后清掉旧课表，并允许聚焦页重新抓取
-                        reloginScope.launch {
-                            repo.cacheTimetable(emptyList())
-                            repo.resetScrapeGuard()
-                        }
                     },
                     onBack = { showRelogin = false },
                 )

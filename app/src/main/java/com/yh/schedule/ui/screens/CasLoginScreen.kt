@@ -127,13 +127,6 @@ fun CasLoginScreen(
         if (showWebView) keyboard?.hide()
     }
 
-    LaunchedEffect(Unit) {
-        repo.savedCredentials()?.let { (a, p) ->
-            account = a
-            password = p
-        }
-    }
-
     // 登录超时保护。
     // 走 VPN 后链路变长（vpn.cdut.edu.cn → CAS → 回跳 VPN → 建会话），
     // 25 秒经常不够，放宽到 45 秒再判失败。
@@ -190,9 +183,9 @@ fun CasLoginScreen(
     fun submit(view: WebView) {
         busy = true
         loginSubmitted = true
+        // 重新发起时清掉上一轮的红字
         error = null
         status = "正在登录…"
-        error = null       // 重新发起时清掉上一轮的红字
         val js = """
             (function(){
               function setVal(id, v){
@@ -472,7 +465,7 @@ fun CasLoginScreen(
                                 // 反复重新加载会把 ticket 消费掉，越重试越拿不到凭据
                                 if (retryCount < 2) {
                                     retryCount++
-                                    status = "网络不稳定，正在重试（$retryCount/4）…"
+                                    status = "网络不稳定，正在重试（$retryCount/2）…"
                                     view?.postDelayed({
                                         view.loadUrl(CAS_LOGIN_URL)
                                     }, 1500)

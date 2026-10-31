@@ -15,8 +15,8 @@ private val Context.dataStore by preferencesDataStore(name = "session")
 /**
  * 会话/登录态存储。
  *
- * 安全说明（MVP）：凭据仅存于应用私有目录的 DataStore；正式版应接入
- * Android Keystore 加密后再落盘（对应原 App 的"静态不可达"项，我们直接做对）。
+ * 安全说明：凭据存于应用私有目录的 DataStore，密码已通过 [CredentialCipher]
+ * （Android Keystore + AES/GCM）加密后再落盘，不留明文。
  */
 class SessionStore(private val context: Context) {
 
@@ -72,6 +72,15 @@ class SessionStore(private val context: Context) {
     suspend fun timetableJson(): String? =
         context.dataStore.data.first()[KEY_TIMETABLE_JSON]
 
+    /** 当前保存的账号（可能为 null/空）。用于登录时判断是否换了账号 */
+    suspend fun account(): String? =
+        context.dataStore.data.first()[KEY_ACCOUNT]
+
+    /** 清掉缓存的课表。只在确实换了账号时调用；同账号重登必须保留旧课表 */
+    suspend fun clearTimetable() {
+        context.dataStore.edit { it.remove(KEY_TIMETABLE_JSON) }
+    }
+
     /** 学期第一周周一；没解析出来时返回 null */
     suspend fun termStartMonday(): String? =
         context.dataStore.data.first()[KEY_TERM_START]
@@ -88,20 +97,10 @@ class SessionStore(private val context: Context) {
         context.dataStore.edit { it[KEY_LAST_SCRAPE] = ms }
     }
 
-    suspend fun saveJwCookie(cookie: String) {
-        context.dataStore.edit { it[KEY_JW_COOKIE] = cookie }
-    }
-
     /** WebView 统一认证登录成功后提取的 CAS 域 Cookie（含 TGC） */
     suspend fun saveCasCookie(cookie: String) {
         context.dataStore.edit { it[KEY_CAS_TGC] = cookie }
     }
-
-    suspend fun casCookie(): String? =
-        context.dataStore.data.first()[KEY_CAS_TGC]
-
-    suspend fun jwCookie(): String? =
-        context.dataStore.data.first()[KEY_JW_COOKIE]
 
     /** 明/密文以该前缀区分：老版本存的是明文，读到后顺手升级成密文 */
     private val ENC_PREFIX = "enc:"
@@ -140,9 +139,5 @@ class SessionStore(private val context: Context) {
             it.remove(KEY_ACCOUNT)
             it.remove(KEY_PASSWORD)
         }
-    }
-
-    suspend fun saveCasTgc(tgc: String) {
-        context.dataStore.edit { it[KEY_CAS_TGC] = tgc }
     }
 }

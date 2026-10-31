@@ -33,7 +33,6 @@ class Repository(
     private val db = AppDb.get(context)
     private val qz = QzClient(app)
     private val eventDao = db.customEventDao()
-    private val examDao = db.examRecordDao()
 
     val demoMode: Flow<Boolean> = store.demoMode
     val loggedIn: Flow<Boolean> = store.loggedIn
@@ -57,8 +56,21 @@ class Repository(
         casCookie: String,
         account: String = "",
         password: String = "",
-            remember: Boolean = true,
+        remember: Boolean = true,
     ) {
+        // 必须在写入新账号之前比较：写完之后读到的永远都是刚保存的新账号
+        val prevAccount = store.account()
+        val switched = prevAccount != null && account.isNotBlank() && prevAccount != account
+
+        // 换账号：旧课表不得残留（否则会看到上一个人的课表），
+        // 同时清掉抓取节流标记，让聚焦页尽快抓新账号的课表。
+        // 同账号重登 / 「刷新登录状态」：一律保留上次抓到的课表 ——
+        // 课表本身很稳定，重登成功但本次抓取失败时，清缓存只会让课表页平白变空。
+        if (switched) {
+            store.clearTimetable()
+            resetScrapeGuard()
+        }
+
         store.saveCasCookie(casCookie)
         if (account.isNotBlank()) {
             if (remember) store.saveCredentials(account, password)
@@ -69,25 +81,12 @@ class Repository(
             null,
             demo = false,
         )
-        _loginExpired.value = false
-        // 后续真实数据请求（强智课表/成绩）复用该 Cookie，见 QzClient 的 setCookie
+        // 课表/成绩的真实数据均由 WebView 链路直接携带会话；
+        // 此处保存的 Cookie 留作后续接入 OkHttp 数据源（如成绩查询）时复用。
     }
 
     /** 已保存的账号密码（用于登录页自动填充） */
     suspend fun savedCredentials(): Pair<String, String>? = store.credentials()
-
-    // ---- 登录态失效（Cookie 过期/被踢）----
-    private val _loginExpired = kotlinx.coroutines.flow.MutableStateFlow(false)
-    val loginExpired: kotlinx.coroutines.flow.StateFlow<Boolean> = _loginExpired
-
-    /** 抓取时发现被重定向到 CAS 登录页 → 标记会话失效，UI 提示重新登录 */
-    fun markLoginExpired() {
-        _loginExpired.value = true
-    }
-
-    fun clearLoginExpired() {
-        _loginExpired.value = false
-    }
 
     suspend fun logout() = store.logout()
 
@@ -262,14 +261,15 @@ class Repository(
 
     suspend fun exams(): List<Exam> = withContext(Dispatchers.IO) {
         if (store.demoMode.first()) return@withContext MockData.exams
-        // 真实模式：强智考试查询待接入，先回落 Mock
-        MockData.exams
+        // 真实模式暂无考试数据源：返回空而不是演示数据（避免假数据冒充真实）
+        emptyList()
     }
 
     suspend fun grades(): List<GradeItem> = withContext(Dispatchers.IO) {
         if (store.demoMode.first()) return@withContext MockData.grades
-        val r = qz.grades()
-        r.getOrDefault(MockData.grades)
+        // 真实模式：会话只存在于 WebView，OkHttp 直连教务必然拿不到成绩；
+        // 失败时返回空列表，绝不回退到演示成绩冒充真实数据（成绩页会显示空态提示）。
+        qz.grades().getOrDefault(emptyList())
     }
 
     // ---------- 自定义日程（本地 Room，两种模式一致） ----------

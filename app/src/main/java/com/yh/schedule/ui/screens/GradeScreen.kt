@@ -43,6 +43,10 @@ fun GradeScreen(repo: Repository) {
     val avgGpa = if (grades.isNotEmpty()) {
         grades.sumOf { (it.gradePoint ?: 0.0) * it.credit } / totalCredit.coerceAtLeast(0.001)
     } else 0.0
+    // 无数据时统计卡显示「—」而不是 0.0，避免被误读成"真实成绩都是 0 分"
+    val weightedAvgText = if (grades.isEmpty()) "—" else "%.1f".format(weightedAvg)
+    val totalCreditText = if (grades.isEmpty()) "—" else "%.1f".format(totalCredit)
+    val avgGpaText = if (grades.isEmpty()) "—" else "%.2f".format(avgGpa)
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -51,9 +55,26 @@ fun GradeScreen(repo: Repository) {
     ) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatCard("加权平均分", "%.1f".format(weightedAvg), Modifier.weight(1f))
-                StatCard("总学分", "%.1f".format(totalCredit), Modifier.weight(1f))
-                StatCard("平均绩点", "%.2f".format(avgGpa), Modifier.weight(1f))
+                StatCard("加权平均分", weightedAvgText, Modifier.weight(1f))
+                StatCard("总学分", totalCreditText, Modifier.weight(1f))
+                StatCard("平均绩点", avgGpaText, Modifier.weight(1f))
+            }
+        }
+
+        if (grades.isEmpty()) {
+            // 真实模式拿不到成绩时给明确空态：三条统计全是 0 会让人误以为是真实成绩
+            item {
+                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("暂无成绩数据", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "成绩自动读取尚未接入，可在「服务」页点「我的成绩」打开官方页面查看。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
 

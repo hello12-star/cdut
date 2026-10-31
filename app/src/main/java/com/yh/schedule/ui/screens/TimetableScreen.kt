@@ -249,13 +249,6 @@ fun TimetableScreen(
     }
 }
 
-/** 日期 → 第几周 */
-private fun weekOf(date: LocalDate): Int {
-    val weeks = java.time.temporal.ChronoUnit.WEEKS
-        .between(SchoolCalendar.termStartMonday, date).toInt() + 1
-    return weeks.coerceIn(1, 25)
-}
-
 /** 小时浮点 → HH:mm（取整到半小时） */
 private fun nearestHalf(hour: Float): String {
     val totalMinutes = (hour * 60).toInt()

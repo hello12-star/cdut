@@ -60,7 +60,6 @@ object WebConst {
         get() = if (USE_VPN) VPN_HTTP_HOST else JW_DIRECT_HOST
 
     val JW_TIMETABLE_URL: String get() = "$host/jsxsd/xskb/xskb_list.do"
-    val JW_GRADE_URL: String get() = "$host/jsxsd/kscj/cjcx_frm"
     val JW_HOME_URL: String get() = "$host/jsxsd/"
 
     /** 抓取起始页：VPN 模式先到门户，直连模式直接进教务 */
