@@ -19,7 +19,6 @@ object QzJsTimetableParser {
     private val SECTION_MAP: List<Pair<String, Int>> = listOf(
         "第一二节" to 1,
         "第三四节" to 3,
-        "中午" to 5,
         "第五六节" to 5,
         "第七八节" to 7,
         "第九十十一节" to 9,
@@ -58,6 +57,10 @@ object QzJsTimetableParser {
             val row = o.optString("row")
             val day = o.optInt("day")
             if (day !in 1..7) continue
+
+            // 「中午」是午休行，不排课。这里必须显式跳过：哪怕该行意外带了内容，
+            // 若按未知行落到默认第 1 节，就会凭空造出一门早课（与 QzHtmlParser 的决策保持一致）
+            if (row.replace(" ", "").contains("中午")) continue
 
             val fields = mutableListOf<Pair<String, String>>()
             val fa = o.optJSONArray("fonts")

@@ -40,7 +40,11 @@ class Repository(
     /** 登录：demo=true 直接进入演示模式；真实模式走 WebView 统一认证（见 CasLoginScreen） */
     suspend fun login(account: String, password: String, demo: Boolean): Result<Unit> {
         if (demo) {
-            store.markLoggedIn(account.ifBlank { "演示用户" }, null, demo = true)
+            val newAccount = account.ifBlank { "演示用户" }
+            // 日程归属账号：切到演示账号同样算换账号，上一个人的日程不得残留
+            val prev = store.lastAccount()
+            if (prev != null && prev != newAccount) eventDao.clearAll()
+            store.markLoggedIn(newAccount, null, demo = true)
             return Result.success(Unit)
         }
         // 真实模式不在代码中处理密码（瑞数 WAF + RSA 加密 + 安全边界），
@@ -59,16 +63,18 @@ class Repository(
         remember: Boolean = true,
     ) {
         // 必须在写入新账号之前比较：写完之后读到的永远都是刚保存的新账号
-        val prevAccount = store.account()
+        val prevAccount = store.lastAccount()
         val switched = prevAccount != null && account.isNotBlank() && prevAccount != account
 
         // 换账号：旧课表不得残留（否则会看到上一个人的课表），
         // 同时清掉抓取节流标记，让聚焦页尽快抓新账号的课表。
+        // 自定义日程同样归属账号，一并清空（日程是本地存储，无法随账号迁移）。
         // 同账号重登 / 「刷新登录状态」：一律保留上次抓到的课表 ——
         // 课表本身很稳定，重登成功但本次抓取失败时，清缓存只会让课表页平白变空。
         if (switched) {
             store.clearTimetable()
             resetScrapeGuard()
+            eventDao.clearAll()
         }
 
         store.saveCasCookie(casCookie)

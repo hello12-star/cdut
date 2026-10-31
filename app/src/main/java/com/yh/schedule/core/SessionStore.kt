@@ -25,6 +25,12 @@ class SessionStore(private val context: Context) {
         private val KEY_LOGGED_IN = booleanPreferencesKey("logged_in")
         private val KEY_ACCOUNT = stringPreferencesKey("account")
         private val KEY_PASSWORD = stringPreferencesKey("password")
+        /**
+         * 上一次成功登录的账号。登出 / 取消记住密码时都不删除，
+         * 专门用于判断「是否换了账号」，从而决定要不要清掉课表缓存与自定义日程。
+         * 不能拿 KEY_ACCOUNT 代替：logout() 和 clearCredentials() 都会把它删掉。
+         */
+        private val KEY_LAST_ACCOUNT = stringPreferencesKey("last_account")
         private val KEY_JW_COOKIE = stringPreferencesKey("jw_cookie")
         private val KEY_CAS_TGC = stringPreferencesKey("cas_tgc")
         private val KEY_TIMETABLE_JSON = stringPreferencesKey("timetable_json")
@@ -47,7 +53,10 @@ class SessionStore(private val context: Context) {
         context.dataStore.edit {
             it[KEY_LOGGED_IN] = true
             it[KEY_DEMO_MODE] = demo
-            if (account.isNotEmpty()) it[KEY_ACCOUNT] = account
+            if (account.isNotEmpty()) {
+                it[KEY_ACCOUNT] = account
+                it[KEY_LAST_ACCOUNT] = account
+            }
             if (password != null) it[KEY_PASSWORD] = password
         }
     }
@@ -75,6 +84,10 @@ class SessionStore(private val context: Context) {
     /** 当前保存的账号（可能为 null/空）。用于登录时判断是否换了账号 */
     suspend fun account(): String? =
         context.dataStore.data.first()[KEY_ACCOUNT]
+
+    /** 上一次成功登录的账号，登出后仍保留。换账号判断请用这个，不要用 [account] */
+    suspend fun lastAccount(): String? =
+        context.dataStore.data.first()[KEY_LAST_ACCOUNT]
 
     /** 清掉缓存的课表。只在确实换了账号时调用；同账号重登必须保留旧课表 */
     suspend fun clearTimetable() {

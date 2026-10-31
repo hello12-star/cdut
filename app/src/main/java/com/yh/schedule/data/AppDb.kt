@@ -61,6 +61,9 @@ interface CustomEventDao {
 
     @Query("DELETE FROM custom_events WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM custom_events")
+    suspend fun clearAll()
 }
 
 @Dao

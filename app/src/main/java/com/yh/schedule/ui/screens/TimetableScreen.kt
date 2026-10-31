@@ -81,6 +81,8 @@ fun TimetableScreen(
     var items by remember { mutableStateOf<List<TimeTableItem>>(emptyList()) }
     var showWeekend by remember { mutableStateOf(false) }
     var demo by remember { mutableStateOf(true) }
+    // 是否存在真实课表缓存：用于区分「抓取还没成功」和「这周确实没排课」
+    var hasCache by remember { mutableStateOf(false) }
     // 本周数据是否已加载过一次（用于屏蔽重建瞬间的空态闪烁）
     var loaded by remember { mutableStateOf(false) }
     var swipeX by remember { mutableFloatStateOf(0f) }
@@ -95,6 +97,7 @@ fun TimetableScreen(
     // 都是同一帧同一布局，不会有内容或底色跳变。抓取统一在「聚焦」页做，成功后写缓存。
     LaunchedEffect(Unit) {
         demo = repo.demoMode.first()
+        hasCache = repo.hasCachedTimetable()
     }
 
     // 周次变化、或外部增删日程后刷新
@@ -143,17 +146,32 @@ fun TimetableScreen(
                         .padding(12.dp),
                 ) {
                     Column(Modifier.padding(12.dp)) {
-                        Text(
-                            "本周没有课程安排",
-                            style = MaterialTheme.typography.titleSmall,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "第 $week 周没有排课（军训、停课或集中实践周常见）。\n" +
-                                    "点右下角切到其他周次即可查看。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        if (!hasCache) {
+                            // 还没抓到过课表 ≠ 本周没课：否则会让人以为教务真的没排课
+                            Text(
+                                "暂无课表数据",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "还没有成功抓到过课表。请到「聚焦」页下拉刷新完成一次教务抓取，" +
+                                        "成功后回到这里即可查看。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            Text(
+                                "本周没有课程安排",
+                                style = MaterialTheme.typography.titleSmall,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "第 $week 周没有排课（军训、停课或集中实践周常见）。\n" +
+                                        "点右下角切到其他周次即可查看。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
