@@ -40,10 +40,65 @@ class SessionStore(private val context: Context) {
 
         /** 上次尝试抓课表的时间戳（ms）。0 / 不存在 = 从未抓过 */
         private val KEY_LAST_SCRAPE = longPreferencesKey("last_scrape_at")
+
+        // ---------- 偏好设置 ----------
+
+        /** 深色模式：system / light / dark */
+        private val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+
+        /** 课表默认展开周末（5/7 天开关的默认值） */
+        private val KEY_SHOW_WEEKEND = booleanPreferencesKey("default_show_weekend")
+
+        /** 聚焦页默认展开「已过期」事项 */
+        private val KEY_SHOW_OVERDUE = booleanPreferencesKey("default_show_overdue")
+
+        /** 深色模式下是否强制网页内容转为深色 */
+        private val KEY_WEBVIEW_DARK = booleanPreferencesKey("webview_dark")
+
+        /** 查询中心入口顺序：逗号分隔的入口 id；空串表示默认顺序 */
+        private val KEY_QUERY_ORDER = stringPreferencesKey("query_order")
     }
 
     val demoMode: Flow<Boolean> = context.dataStore.data.map { it[KEY_DEMO_MODE] ?: true }
     val loggedIn: Flow<Boolean> = context.dataStore.data.map { it[KEY_LOGGED_IN] ?: false }
+
+    /** 深色模式偏好：system / light / dark */
+    val themeMode: Flow<String> = context.dataStore.data.map { it[KEY_THEME_MODE] ?: "system" }
+
+    /** 课表是否默认展开周末 */
+    val showWeekendDefault: Flow<Boolean> =
+        context.dataStore.data.map { it[KEY_SHOW_WEEKEND] ?: false }
+
+    /** 聚焦页是否默认展开已过期事项 */
+    val showOverdueDefault: Flow<Boolean> =
+        context.dataStore.data.map { it[KEY_SHOW_OVERDUE] ?: false }
+
+    /** 深色模式下是否强制网页深色（默认关，避免浅色模式被意外染色） */
+    val webViewDark: Flow<Boolean> =
+        context.dataStore.data.map { it[KEY_WEBVIEW_DARK] ?: false }
+
+    /** 查询中心入口顺序；空串表示默认顺序 */
+    val queryOrder: Flow<String> = context.dataStore.data.map { it[KEY_QUERY_ORDER] ?: "" }
+
+    suspend fun setThemeMode(mode: String) {
+        context.dataStore.edit { it[KEY_THEME_MODE] = mode }
+    }
+
+    suspend fun setShowWeekendDefault(on: Boolean) {
+        context.dataStore.edit { it[KEY_SHOW_WEEKEND] = on }
+    }
+
+    suspend fun setShowOverdueDefault(on: Boolean) {
+        context.dataStore.edit { it[KEY_SHOW_OVERDUE] = on }
+    }
+
+    suspend fun setWebViewDark(on: Boolean) {
+        context.dataStore.edit { it[KEY_WEBVIEW_DARK] = on }
+    }
+
+    suspend fun setQueryOrder(order: String) {
+        context.dataStore.edit { it[KEY_QUERY_ORDER] = order }
+    }
 
     suspend fun setDemoMode(on: Boolean) {
         context.dataStore.edit { it[KEY_DEMO_MODE] = on }

@@ -40,10 +40,10 @@ fun LoginScreen(repo: Repository, onCasLogin: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("砚湖日程", style = MaterialTheme.typography.headlineLarge)
+        Text("掌上成理", style = MaterialTheme.typography.headlineLarge)
         Spacer(Modifier.height(4.dp))
         Text(
-            "成都理工大学校园日程助手 · MVP",
+            "成都理工大学校园日程助手",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

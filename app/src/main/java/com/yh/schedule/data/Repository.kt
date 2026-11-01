@@ -37,6 +37,33 @@ class Repository(
     val demoMode: Flow<Boolean> = store.demoMode
     val loggedIn: Flow<Boolean> = store.loggedIn
 
+    // ---------- 偏好设置（选项页） ----------
+
+    /** 深色模式：system / light / dark */
+    val themeMode: Flow<String> = store.themeMode
+
+    /** 课表默认展开周末 */
+    val showWeekendDefault: Flow<Boolean> = store.showWeekendDefault
+
+    /** 聚焦页默认展开已过期事项 */
+    val showOverdueDefault: Flow<Boolean> = store.showOverdueDefault
+
+    /** 深色模式下是否强制网页深色 */
+    val webViewDark: Flow<Boolean> = store.webViewDark
+
+    /** 查询中心入口顺序（逗号分隔的 id） */
+    val queryOrder: Flow<String> = store.queryOrder
+
+    suspend fun setThemeMode(mode: String) = store.setThemeMode(mode)
+
+    suspend fun setShowWeekendDefault(on: Boolean) = store.setShowWeekendDefault(on)
+
+    suspend fun setShowOverdueDefault(on: Boolean) = store.setShowOverdueDefault(on)
+
+    suspend fun setWebViewDark(on: Boolean) = store.setWebViewDark(on)
+
+    suspend fun setQueryOrder(order: String) = store.setQueryOrder(order)
+
     /** 登录：demo=true 直接进入演示模式；真实模式走 WebView 统一认证（见 CasLoginScreen） */
     suspend fun login(account: String, password: String, demo: Boolean): Result<Unit> {
         if (demo) {
@@ -93,6 +120,9 @@ class Repository(
 
     /** 已保存的账号密码（用于登录页自动填充） */
     suspend fun savedCredentials(): Pair<String, String>? = store.credentials()
+
+    /** 当前登录的账号（演示模式为「演示用户」）。仅用于选项页展示 */
+    suspend fun currentAccount(): String? = store.account()
 
     suspend fun logout() = store.logout()
 
@@ -188,7 +218,7 @@ class Repository(
         // 已存的值也要校验：上一版可能被探测错的周次写坏过。
         // 相差超过 45 天基本可以确定是坏值（同校同一学期内的校历调整不会这么大），
         // 直接回退到默认并纠正存储，否则课表会一直空着。
-        val fallback = java.time.LocalDate.of(2026, 8, 31)
+        val fallback = SchoolCalendar.DEFAULT_TERM_START_MONDAY
         if (QzTermParser.isFarApart(fallback, saved, maxDays = 45)) {
             android.util.Log.w("QzTerm", "已存的学期起始日 $saved 明显异常，回退到默认 $fallback")
             store.saveTermStartMonday(fallback.toString())
@@ -201,6 +231,28 @@ class Repository(
 
     /** 是否有真实课表缓存 */
     suspend fun hasCachedTimetable(): Boolean = !store.timetableJson().isNullOrBlank()
+
+    /** 当前生效的学期第一周周一（展示用） */
+    fun currentTermStartMonday(): LocalDate = SchoolCalendar.termStartMonday
+
+    /**
+     * 恢复默认学期起始日。
+     * 只改本地缓存值与偏好，不重新抓课表；下次进入聚焦页会按新的周次重新拉取。
+     */
+    suspend fun resetTermStartMonday() {
+        val default = SchoolCalendar.DEFAULT_TERM_START_MONDAY
+        store.saveTermStartMonday(default.toString())
+        SchoolCalendar.termStartMonday = default
+    }
+
+    /**
+     * 清除课表缓存（用户主动操作）。
+     * 同时清掉抓取节流标记，确保下次进入聚焦页会重新抓取当前账号的课表。
+     */
+    suspend fun clearTimetableCache() {
+        store.clearTimetable()
+        resetScrapeGuard()
+    }
 
     /**
      * 某周课表项：课程 + 自定义日程，合并为一组 [TimeTableItem]

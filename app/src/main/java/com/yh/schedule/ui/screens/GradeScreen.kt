@@ -69,7 +69,7 @@ fun GradeScreen(repo: Repository) {
                         Text("暂无成绩数据", style = MaterialTheme.typography.titleSmall)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "成绩自动读取尚未接入，可在「服务」页点「我的成绩」打开官方页面查看。",
+                            "成绩自动读取尚未接入，可在「查询中心」点「成绩查询」打开官方页面查看。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

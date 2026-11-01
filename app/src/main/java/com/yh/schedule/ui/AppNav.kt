@@ -1,14 +1,19 @@
 package com.yh.schedule.ui
 
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -34,11 +39,13 @@ import com.yh.schedule.core.CustomEvent
 import com.yh.schedule.core.SessionStore
 import com.yh.schedule.data.Repository
 import com.yh.schedule.ui.screens.AddEventScreen
+import com.yh.schedule.ui.screens.AboutScreen
 import com.yh.schedule.ui.screens.CourseDetailScreen
 import com.yh.schedule.ui.screens.FocusScreen
-import com.yh.schedule.ui.screens.GradeScreen
+import com.yh.schedule.ui.screens.GradeStatsScreen
 import com.yh.schedule.ui.screens.LoginScreen
-import com.yh.schedule.ui.screens.ServicesScreen
+import com.yh.schedule.ui.screens.OptionsScreen
+import com.yh.schedule.ui.screens.QueryCenterScreen
 import com.yh.schedule.ui.screens.TimetableScreen
 import com.yh.schedule.ui.screens.WebContainerScreen
 
@@ -53,6 +60,10 @@ private sealed interface Overlay {
     data class Edit(val event: CustomEvent) : Overlay
     // 注意：子类别叫 Course，否则会遮蔽 com.yh.schedule.core.Course
     data class CourseDetail(val courses: List<Course>) : Overlay
+    /** 查询中心里的「成绩统计」本地页 */
+    data object Grade : Overlay
+    /** 选项页里的「维护与关于」页（开源引用 / 用户协议） */
+    data object About : Overlay
 }
 
 @Composable
@@ -73,6 +84,14 @@ fun AppRoot(app: CdutApp) {
     }
     var showCasLogin by remember { androidx.compose.runtime.mutableStateOf(false) }
 
+    // 深色模式是用户偏好（选项页可改），因此主题必须在这里包裹，不能放在 MainActivity
+    val themeMode by store.themeMode.collectAsState(initial = "system")
+    val darkTheme = when (themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> androidx.compose.foundation.isSystemInDarkTheme()
+    }
+
     // 登录成功后只关掉登录页。不再无条件清课表缓存：
     // 换账号的清理已移入 Repository.onWebLoginSuccess（按新旧账号比对），
     // 同账号重登保留上次课表，重登后抓取失败也不会让课表页变空。
@@ -80,25 +99,37 @@ fun AppRoot(app: CdutApp) {
         showCasLogin = false
     }
 
-    when (loggedIn) {
-        null -> { /* DataStore 首次读取中 */ }
-        false -> if (showCasLogin) {
-            com.yh.schedule.ui.screens.CasLoginScreen(
-                repo = repo,
-                onSuccess = { onLoginDone() },
-                onBack = { showCasLogin = false },
-            )
-        } else {
-            LoginScreen(repo = repo, onCasLogin = { showCasLogin = true })
+    com.yh.schedule.ui.theme.YhTheme(darkTheme = darkTheme) {
+        // 根容器铺主题底色并让出状态栏高度：内容仍从状态栏下方开始，
+        // 但状态栏区域由这块背景填充，任何下拉/窗口动画都不会露出白底。
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .statusBarsPadding(),
+        ) {
+            when (loggedIn) {
+                null -> { /* DataStore 首次读取中 */ }
+                false -> if (showCasLogin) {
+                    com.yh.schedule.ui.screens.CasLoginScreen(
+                        repo = repo,
+                        onSuccess = { onLoginDone() },
+                        onBack = { showCasLogin = false },
+                    )
+                } else {
+                    LoginScreen(repo = repo, onCasLogin = { showCasLogin = true })
+                }
+                true -> MainNav(repo = repo, darkTheme = darkTheme)
+            }
         }
-        true -> MainNav(repo = repo)
     }
 }
 
 @Composable
-fun MainNav(repo: Repository) {
+fun MainNav(repo: Repository, darkTheme: Boolean = false) {
     val nav = rememberNavController()
     var showRelogin by remember { androidx.compose.runtime.mutableStateOf(false) }
+    val forceWebViewDark by repo.webViewDark.collectAsState(initial = false)
 
     // 登录覆盖层打开时，系统返回键只关掉登录页，而不是退出整个应用
     //（不拦的话系统返回会直接 finish Activity，用户从"服务→刷新登录状态"进来会被踢出 App）
@@ -118,7 +149,17 @@ fun MainNav(repo: Repository) {
             ) { entry ->
                 val url = entry.arguments?.getString("url").orEmpty()
                 val title = entry.arguments?.getString("title").orEmpty()
-                WebContainerScreen(url = url, title = title, onBack = { nav.popBackStack() })
+                WebContainerScreen(
+                    url = url,
+                    title = title,
+                    onBack = { nav.popBackStack() },
+                    darkTheme = darkTheme,
+                    forceWebViewDark = forceWebViewDark,
+                    onRelogin = {
+                        showRelogin = true
+                        nav.popBackStack()
+                    },
+                )
             }
         }
 
@@ -150,8 +191,8 @@ private fun MainScaffold(
     val tabs = listOf(
         Tab("课程表", Icons.Filled.CalendarMonth),
         Tab("聚焦", Icons.Filled.WbSunny),
-        Tab("成绩", Icons.Filled.BarChart),
-        Tab("服务", Icons.Filled.Apps),
+        Tab("查询中心", Icons.Filled.Category),
+        Tab("选项", Icons.Filled.Settings),
     )
     var selected by remember { mutableIntStateOf(0) }
     val demo by repo.demoMode.collectAsState(initial = true)
@@ -179,6 +220,8 @@ private fun MainScaffold(
 
     androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
         Scaffold(
+            // 顶部状态栏高度已由 AppRoot 的根容器统一让出，Scaffold 不再重复加 inset
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
                 // 注意：导航栏保持常驻、不去动它。一旦收起/展开，Scaffold 的 content padding 会变，
                 // 底下整个页面跟着重排，观感上就是闪一下。覆盖层直接盖在 Scaffold 之上即可。
@@ -211,12 +254,16 @@ private fun MainScaffold(
                         },
                         onEditEvent = { overlay = Overlay.Edit(it) },
                     )
-                    2 -> GradeScreen(repo)
-                    3 -> ServicesScreen(
+                    2 -> QueryCenterScreen(
                         repo = repo,
                         openWeb = openWeb,
-                        isRealLogin = !demo,
+                        onOpenGradeStats = { overlay = Overlay.Grade },
+                    )
+                    3 -> OptionsScreen(
+                        repo = repo,
+                        demo = demo,
                         onRelogin = onRelogin,
+                        onOpenLicenses = { overlay = Overlay.About },
                     )
                 }
             }
@@ -283,6 +330,11 @@ private fun MainScaffold(
                     courses = target.courses,
                     onDismiss = { overlay = null },
                 )
+                is Overlay.Grade -> GradeStatsScreen(
+                    repo = repo,
+                    onBack = { overlay = null },
+                )
+                is Overlay.About -> AboutScreen(onBack = { overlay = null })
             }
         }
     }

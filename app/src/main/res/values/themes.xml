@@ -2,6 +2,9 @@
 <resources>
     <style name="Theme.YHSchedule" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <!-- 由 YhTheme 在运行时按明暗主题设置图标颜色；
+             这里固定为 false，避免系统在窗口焦点/下拉时回退成浅色状态栏样式。 -->
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>

@@ -14,8 +14,8 @@ android {
         applicationId = "com.yh.schedule"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0-mvp"
+        versionCode = 6
+        versionName = "0.1.6"
     }
 
     buildTypes {
@@ -37,6 +37,20 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+}
+
+/**
+ * 分发用的 APK 文件名：用户直接把 APK 发给同学，文件名也应是「掌上成理」。
+ * 保留 app-debug.apk 作为构建产物，另复制一份可分发文件到 app/build/dist/。
+ */
+tasks.register<Copy>("copyDebugApk") {
+    from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
+    into(layout.buildDirectory.dir("dist"))
+    rename { "掌上成理-debug.apk" }
+}
+
+tasks.configureEach {
+    if (name == "assembleDebug") finalizedBy("copyDebugApk")
 }
 
 dependencies {
@@ -65,6 +79,9 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // 查询中心入口拖拽排序
+    implementation("sh.calvin.reorderable:reorderable:3.1.0")
 
     testImplementation("junit:junit:4.13.2")
 }

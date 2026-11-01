@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalOverscrollConfiguration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -53,6 +54,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -76,6 +78,7 @@ import com.yh.schedule.core.TimeTableItem
 import com.yh.schedule.core.TimeTableType
 import com.yh.schedule.data.Repository
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -179,6 +182,11 @@ fun FocusScreen(
         repo.customEvents().collect { events = it }
     }
 
+    // 选项页偏好：是否默认展开「已过期」日程
+    LaunchedEffect(Unit) {
+        showOverdue = repo.showOverdueDefault.first()
+    }
+
     // 进 App 后检查一次教务系统。
     // 用「上次尝试时间」判据（持久化），而不是进程级 object：
     // 后者一旦某条重置路径漏掉，就会永远不自动抓取，而且现象是静默无动作、极难排查。
@@ -250,7 +258,13 @@ fun FocusScreen(
     val futureEvents = otherEvents.filterNot { isOverdue(it, nowDateTime) }
 
     // 全屏页由 MainScaffold 统一承载（盖在 Scaffold 之上），这里只负责发起
-    Box(Modifier.fillMaxSize()) {
+    // 根容器必须铺主题底色：下拉刷新时顶部日期/页签区域在 PullToRefreshBox 之外，
+    // 若保持透明会透出 Activity 的浅色窗口背景，深色模式下就会闪出白条。
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
+    ) {
         Column(Modifier.fillMaxSize()) {
             // ---- 顶部日期（对齐截图：10-22 第7周 周四，蓝色大字）----
             Text(
@@ -339,6 +353,10 @@ fun FocusScreen(
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background),
             ) {
+            // 关掉系统 overscroll 光晕：深色主题下它的默认光晕是白色，
+            // 下拉刷新时会在状态栏高度闪一条白边。刷新反馈由顶部检查卡承担。
+            @Suppress("DEPRECATION")
+            CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
             HorizontalPager(state = pager, modifier = Modifier.fillMaxSize()) { page ->
                 LazyColumn(
                     Modifier.fillMaxSize(),
@@ -424,7 +442,11 @@ fun FocusScreen(
                                 Card(
                                     Modifier
                                         .fillMaxWidth()
-                                        .clickable { showOverdue = !showOverdue },
+                                        .clickable {
+                                            showOverdue = !showOverdue
+                                            // 记住这次选择：选项页的「默认展开已过期」与此联动
+                                            scope.launch { repo.setShowOverdueDefault(showOverdue) }
+                                        },
                                 ) {
                                     Row(
                                         Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
@@ -478,6 +500,7 @@ fun FocusScreen(
                         }
                     }
                 }
+            }
             }
             }
         }

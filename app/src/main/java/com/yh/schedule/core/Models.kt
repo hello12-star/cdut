@@ -102,8 +102,11 @@ object SchoolCalendar {
      * 学期第一周周一。
      * 2026-2027-1：经核对，10/19-10/25 为**第 8 周**（同学口径），故第一周从 8/31 起算。
      * （此前误设 9/7，导致周次整体偏小 1 周）
+     * 该值同时作为「恢复默认」的硬编码兜底。
      */
-    var termStartMonday: LocalDate = LocalDate.of(2026, 8, 31)
+    val DEFAULT_TERM_START_MONDAY: LocalDate = LocalDate.of(2026, 8, 31)
+
+    var termStartMonday: LocalDate = DEFAULT_TERM_START_MONDAY
 
     fun currentWeek(today: LocalDate = LocalDate.now()): Int {
         val weeks = java.time.temporal.ChronoUnit.WEEKS.between(termStartMonday, today).toInt() + 1

@@ -19,9 +19,13 @@ local.properties
 
 # ---- 调试产物 ----
 recon/
+.screenshots/
 *.log
 *.apk
 *.hprof
+
+# ---- 第三方参考源码（只作本地对照，不入库）----
+github-sources/
 
 # ---- 系统 ----
 .DS_Store

@@ -17,9 +17,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.UnfoldLess
-import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material.icons.filled.CloseFullscreen
+import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -80,6 +79,8 @@ fun TimetableScreen(
     var week by remember { mutableIntStateOf(SchoolCalendar.currentWeek()) }
     var items by remember { mutableStateOf<List<TimeTableItem>>(emptyList()) }
     var showWeekend by remember { mutableStateOf(false) }
+    // 选项页的偏好：开启后无论本周有没有周末课都按 7 天显示
+    var preferWeekend by remember { mutableStateOf(false) }
     var demo by remember { mutableStateOf(true) }
     // 是否存在真实课表缓存：用于区分「抓取还没成功」和「这周确实没排课」
     var hasCache by remember { mutableStateOf(false) }
@@ -98,6 +99,7 @@ fun TimetableScreen(
     LaunchedEffect(Unit) {
         demo = repo.demoMode.first()
         hasCache = repo.hasCachedTimetable()
+        preferWeekend = repo.showWeekendDefault.first()
     }
 
     // 周次变化、或外部增删日程后刷新
@@ -109,9 +111,10 @@ fun TimetableScreen(
     }
 
     // 本周周末（周六/周日）有没有课程或自建日程：有 → 排 7 天，没有 → 只排周一到周五，
-    // 让每列更宽（对齐源码 showAll 的 7/5 两天数切换）
-    LaunchedEffect(items) {
-        showWeekend = items.any { it.dayOfWeek == 6 || it.dayOfWeek == 7 }
+    // 让每列更宽（对齐源码 showAll 的 7/5 两天数切换）。
+    // 选项页开了「默认展开周末」就无视本周排课，始终 7 天。
+    LaunchedEffect(items, preferWeekend) {
+        showWeekend = preferWeekend || items.any { it.dayOfWeek == 6 || it.dayOfWeek == 7 }
     }
 
     // 抓取逻辑已整体移到「聚焦」页（见 FocusScreen 的教务检查卡），课表页不再联网。
@@ -215,7 +218,8 @@ fun TimetableScreen(
                         modifier = Modifier.size(28.dp),
                     ) {
                         Icon(
-                            if (showWeekend) Icons.Filled.UnfoldLess else Icons.Filled.UnfoldMore,
+                            // 对角（放大/缩小）箭头：向外扩 = 展开周末，向内收 = 收起周末
+                            if (showWeekend) Icons.Filled.CloseFullscreen else Icons.Filled.OpenInFull,
                             contentDescription = if (showWeekend) "收起周末" else "展开周末",
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,

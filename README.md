@@ -1,4 +1,4 @@
-# 砚湖日程（YHSchedule）
+# 掌上成理（YHSchedule）
 
 成都理工大学校园日程助手 —— MVP。功能语义参照"聚在工大"（HFUT-Schedule）的功能级逆向分析成果重新设计，接口契约全部换为成都理工大学生态。
 
@@ -116,6 +116,7 @@ gradle-dist\gradle-8.10.2\bin\gradle.bat assembleDebug --no-daemon
 ```
 
 产物：`app\build\outputs\apk\debug\app-debug.apk`（约 17.5 MB，2026-10-18 已构建成功）。
+分发包：`app\build\dist\掌上成理-debug.apk`（`assembleDebug` 后自动复制，文件名用于直接发给同学）。
 
 - JDK：17 ~ 21（本仓库已附带 JDK 21 于 `jdk21\`；Java 25 会被 Gradle 8.10 拒绝）
 - Android SDK：`local.properties` 已指向 `C:\Users\l'l\AppData\Local\Android\Sdk`；首次构建时 AGP 自动补装了 platform 35

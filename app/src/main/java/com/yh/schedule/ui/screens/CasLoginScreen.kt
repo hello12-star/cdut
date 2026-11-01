@@ -245,7 +245,7 @@ fun CasLoginScreen(
                 .padding(horizontal = 20.dp),
         ) {
             Spacer(Modifier.height(24.dp))
-            Text("砚湖日程", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Text("掌上成理", fontSize = 28.sp, fontWeight = FontWeight.Bold)
             Text(
                 "成都理工大学 · 教务账号登录",
                 style = MaterialTheme.typography.bodyMedium,
