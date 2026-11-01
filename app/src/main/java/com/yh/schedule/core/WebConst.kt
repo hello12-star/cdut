@@ -23,7 +23,7 @@ package com.yh.schedule.core
 object WebConst {
 
     /** 是否走校园 WebVPN。切换整条链路的唯一开关。 */
-    const val USE_VPN = false
+    const val USE_VPN = true
 
     // ---------- VPN 侧 ----------
 
@@ -64,4 +64,29 @@ object WebConst {
 
     /** 抓取起始页：VPN 模式先到门户，直连模式直接进教务 */
     val SCRAPE_ENTRY_URL: String get() = if (USE_VPN) PORTAL_URL else JW_HOME_URL
+
+    /**
+     * 把直连地址改写成 VPN 反向代理地址；已经是代理域则原样返回。
+     *
+     * 门户的「教务管理系统」卡片 onClick 里写的是 `openExpress('https://jw.cdut.edu.cn/sso/login.jsp',...)`
+     * 这种**直连**地址。在 VPN 会话下直接打开它会落到 `cas.paas.cdut.edu.cn` 的登录页，
+     * 因为 VPN 登录拿到的 TGC 只存在于代理域 `cas-paas-...:8118` 上，直连域没有。
+     * 改写成 jw 代理域后，由代理转发给教务，教务再跳代理 CAS，才能凭 TGC 免登录进课表。
+     */
+    fun proxify(url: String): String {
+        if (!USE_VPN) return url
+        if (url.contains("-s.vpn.cdut.edu.cn")) return url
+        // WebVPN 的反代端口 8118 只接 http；cas 域例外，代理侧仍是 https
+        fun httpOf(u: String): String =
+            if (u.startsWith("https://")) "http://" + u.removePrefix("https://") else u
+        return when {
+            url.contains("jw.cdut.edu.cn") ->
+                httpOf(url).replace("jw.cdut.edu.cn", "jw-cdut-edu-cn-s.vpn.cdut.edu.cn:8118")
+            url.contains("cas.paas.cdut.edu.cn") ->
+                url.replace("cas.paas.cdut.edu.cn", "cas-paas-cdut-edu-cn-s.vpn.cdut.edu.cn:8118")
+            url.contains("bsdt.cdut.edu.cn") ->
+                httpOf(url).replace("bsdt.cdut.edu.cn", "bsdt-cdut-edu-cn-s.vpn.cdut.edu.cn:8118")
+            else -> url
+        }
+    }
 }

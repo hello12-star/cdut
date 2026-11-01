@@ -384,8 +384,11 @@ fun CasLoginScreen(
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 val u = url.orEmpty()
+                                android.util.Log.i("CasLogin", "onPageFinished: $u")
                                 when {
-                                    u.contains("cas.paas.cdut.edu.cn/cas/login") -> {
+                                    u.contains("cas.paas.cdut.edu.cn/cas/login") ||
+                                            u.contains("cas-paas-cdut-edu-cn-s.vpn.cdut.edu.cn") ||
+                                            u.contains("vpn.cdut.edu.cn/public/cas_login") -> {
                                         if (!pageReady) {
                                             pageReady = true
                                             if (!busy) status = "输入学号密码后点「登录」"
@@ -401,7 +404,7 @@ fun CasLoginScreen(
                                     // ① 智慧校园门户（VPN 登录后的落地页，最常见的成功标志）
                                     // ② VPN 门户 ③ 教务 VPN 代理域 ④ 教务内网直连（历史路径）
                                     u.contains("bsdt-cdut") ||
-                                            u.contains("vpn.cdut.edu.cn/por") ||
+                                            u.contains("vpn.cdut.edu.cn/portal") ||
                                             u.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) ||
                                             u.contains("jw.cdut.edu.cn") -> {
                                         if (!handled && (busy || loginSubmitted || showWebView)) {                                            handled = true
@@ -420,6 +423,15 @@ fun CasLoginScreen(
                                                 val portalCookie = cm.getCookie(
                                                     com.yh.schedule.core.WebConst.PORTAL_URL
                                                 )
+                                                // VPN 链路里真正决定教务能不能进的是代理域上的会话：
+                                                // CAS 的 TGC 落在 cas-paas-...，教务 jw 的 JSESSIONID 落在 jw-cdut-...。
+                                                // 之前只读直连 cas/jw，代理域为空判断会把已登录当成没登录。
+                                                val casProxyCookie = cm.getCookie(
+                                                    "https://cas-paas-cdut-edu-cn-s.vpn.cdut.edu.cn:8118"
+                                                )
+                                                val jwProxyCookie = cm.getCookie(
+                                                    "http://jw-cdut-edu-cn-s.vpn.cdut.edu.cn:8118"
+                                                )
 
                                                 val directMerged = listOfNotNull(casCookie, jwCookie)
                                                     .joinToString("; ")
@@ -428,6 +440,8 @@ fun CasLoginScreen(
                                                         directMerged.takeIf { it.isNotBlank() },
                                                         vpnCookie,
                                                         portalCookie,
+                                                        casProxyCookie,
+                                                        jwProxyCookie,
                                                     ).joinToString("; ")
                                                 } else {
                                                     directMerged
@@ -461,6 +475,10 @@ fun CasLoginScreen(
                             ) {
                                 // 只处理主文档失败；DNS 抖动很常见，重试几次（对齐抓取器的重试策略）
                                 if (request?.isForMainFrame != true) return
+                                android.util.Log.w(
+                                    "CasLogin",
+                                    "onReceivedError: ${request?.url} ${error?.description}",
+                                )
                                 // 只重试 2 次：VPN 的 ticket 是一次性的，
                                 // 反复重新加载会把 ticket 消费掉，越重试越拿不到凭据
                                 if (retryCount < 2) {
@@ -484,4 +502,111 @@ fun CasLoginScreen(
             )
         }
     }
+}
+
+/**
+ * D4「自动刷新登录」：冷启动后在后台用已保存的账密重新走一次 CAS。
+ *
+ * 与 [CasLoginScreen] 同源：1dp 隐藏 WebView 打开 CAS 页 → 注入账密并点登录
+ * → 命中 VPN 门户 / 代理教务域就算成功。全程无界面，不打扰用户；
+ * 失败静默返回，由调用方最多提示一次。
+ */
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun AutoLoginRefresher(
+    account: String,
+    password: String,
+    onDone: (Boolean) -> Unit,
+) {
+    AndroidView(
+        modifier = Modifier.size(1.dp),
+        factory = { ctx ->
+            WebView(ctx).apply {
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.mixedContentMode =
+                    android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                CookieManager.getInstance().setAcceptCookie(true)
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+                var submitted = 0
+                var done = false
+                fun finish(ok: Boolean) {
+                    if (done) return
+                    done = true
+                    android.util.Log.i("AutoLogin", "done=$ok")
+                    onDone(ok)
+                }
+                fun submit(view: WebView) {
+                    if (done) return
+                    val js = """
+                        (function(){
+                          function setVal(id, v){
+                            var els = document.querySelectorAll('#' + id);
+                            for (var i = 0; i < els.length; i++) {
+                              var el = els[i];
+                              if (el.type === 'hidden' || el.offsetParent === null) continue;
+                              el.value = v;
+                              el.dispatchEvent(new Event('input',{bubbles:true}));
+                              el.dispatchEvent(new Event('change',{bubbles:true}));
+                            }
+                          }
+                          setVal('username', '${account.jsEscape()}');
+                          setVal('password', '${password.jsEscape()}');
+                          setTimeout(function(){
+                            var btns = document.querySelectorAll('button, .el-button, input[type=button]');
+                            for (var i = 0; i < btns.length; i++) {
+                              var t = ((btns[i].innerText || btns[i].value || '') + '').replace(/\s/g, '');
+                              if (t.indexOf('登录') >= 0 && t.length <= 4) { btns[i].click(); return; }
+                            }
+                          }, 400);
+                          return 'submitted';
+                        })()
+                    """.trimIndent()
+                    view.evaluateJavascript(js, null)
+                }
+
+                webViewClient = object : WebViewClient() {
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        if (view == null || done) return
+                        val u = url.orEmpty()
+                        android.util.Log.i("AutoLogin", "onPageFinished: $u")
+                        when {
+                            // CAS 登录页：最多提交两次，仍回到登录页就放弃（密码变更/验证码）
+                            u.contains("cas.paas.cdut.edu.cn/cas/login") ||
+                                    u.contains("cas-paas-cdut-edu-cn-s.vpn.cdut.edu.cn") ||
+                                    u.contains("vpn.cdut.edu.cn/public/cas_login") -> {
+                                if (submitted < 2) {
+                                    submitted++
+                                    view.postDelayed({ submit(view) }, 600)
+                                } else {
+                                    finish(false)
+                                }
+                            }
+                            u.contains("bsdt-cdut") ||
+                                    u.contains("vpn.cdut.edu.cn/portal") ||
+                                    u.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) ||
+                                    u.contains("jw.cdut.edu.cn") -> {
+                                // 留一点时间让 Set-Cookie 落盘再判定成功
+                                view.postDelayed({ finish(true) }, 1200)
+                            }
+                        }
+                    }
+
+                    override fun onReceivedError(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                        error: WebResourceError?,
+                    ) {
+                        if (request?.isForMainFrame == true) {
+                            android.util.Log.w("AutoLogin", "error: ${error?.description}")
+                        }
+                    }
+                }
+                loadUrl(CAS_LOGIN_URL)
+                // 超时兜底：VPN 链路比直连长，给 45 秒
+                postDelayed({ finish(false) }, 45_000)
+            }
+        },
+    )
 }

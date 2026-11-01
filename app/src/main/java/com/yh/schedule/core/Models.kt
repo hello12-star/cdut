@@ -181,5 +181,6 @@ data class BackupPrefs(
     val courseTextScale: Float = 1f,
     val courseLineScale: Float = 1f,
     val infiniteWheel: Boolean = true,
+    val autoRefreshLogin: Boolean = false,
     val termStartMonday: String? = null,
 )

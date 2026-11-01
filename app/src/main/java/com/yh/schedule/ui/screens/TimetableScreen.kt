@@ -320,6 +320,10 @@ internal fun TimetableScraper(
                 var retry = 0
                 var warmedUp = false
                 var grabbed = false
+                // 门户点击「教务管理系统」的次数。点击后若一直停在门户（页面用 window.open 或
+                // SPA 拦截），原逻辑会重载门户 → onPageFinished → 再点，形成无限循环。
+                // 这里限制次数，超过就带诊断信息失败，不再空转。
+                var portalClicks = 0
                 // 记录访问过的 URL 轨迹：失败时一并回传给界面，
                 // 这样不用连电脑抓日志也能看出卡在哪一跳
                 val urlTrail = mutableListOf<String>()
@@ -393,35 +397,88 @@ internal fun TimetableScraper(
                     }
                 }
 
+                /** 失败诊断：把当前地址、正文片段、候选入口（含 onclick）一并带出来 */
+                fun dumpPortal(view: WebView, prefix: String) {
+                    view.evaluateJavascript(
+                        "(function(){" +
+                                "var t=(document.body?document.body.innerText:'').replace(/\\s+/g,' ').slice(0,300);" +
+                                "var a=[];var as=document.querySelectorAll('a');" +
+                                "for(var i=0;i<as.length;i++){" +
+                                "  a.push(((as[i].innerText||as[i].title||'').replace(/\\s+/g,' ').slice(0,30))" +
+                                "    +'|'+((as[i].href||'').slice(0,80)));" +
+                                "}" +
+                                "var ds=[];var cs=document.querySelectorAll('div[onclick],li[onclick],span[onclick]');" +
+                                "for(var d=0;d<cs.length;d++){" +
+                                "  var et=(cs[d].innerText||'').replace(/\\s+/g,' ').trim().slice(0,20);" +
+                                "  if(et.indexOf('教务')<0) continue;" +
+                                "  ds.push(et+'|'+(cs[d].getAttribute('onclick')||'').slice(0,150));" +
+                                "}" +
+                                "return location.href+' || '+t+' || OPEN: '+(window.__yhOpen||'')" +
+                                "  +' || LINKS: '+a.slice(0,20).join(' ; ')" +
+                                "  +' || CLICK: '+ds.slice(0,10).join(' ; ');" +
+                                "})()"
+                    ) { info ->
+                        val msg = prefix + "｜" + decodeJsString(info) + "｜轨迹: " + trailText()
+                        android.util.Log.i("VPNScrape", msg)
+                        onFail(msg)
+                    }
+                }
+
                 /**
                  * 智慧校园门户：找「教务管理系统」入口并点进去。
                  *
                  * 为什么要这一步：教务要求从门户走 SSO 单点进入，
                  * 直接访问 jw 代理域会因为拿不到 SSO 票据报「未取到会话凭据」。
                  * 门户页面可能是 SPA / 含 iframe，所以 document 和 iframe 都找一遍。
+                 *
+                 * 入口常见两种实现，抓取 WebView 都没法自然处理：
+                 * 1. `window.open(url)`：没有 onCreateWindow 就被直接吞掉；
+                 * 2. `target="_blank"`：同样不导航。
+                 * 所以这里先钩住 window.open 记录目标地址，再把空白页链接改回当前窗口。
                  */
                 fun clickJwLink(view: WebView, attempt: Int = 0) {
                     val js = "(function(){" +
+                            "function abs(u){try{return new URL(u,location.href).href;}catch(e){return u?(''+u):'';}}" +
+                            "if(!window.__yhOpenHooked){" +
+                            "  window.__yhOpenHooked=1;window.__yhOpen='';" +
+                            "  window.open=function(u){window.__yhOpen=abs((u||'')+'');return null;};" +
+                            "}" +
+                            "window.__yhOpen='';" +
+                            "var bs=document.querySelectorAll('a[target=_blank]');" +
+                            "for(var bi=0;bi<bs.length;bi++) bs[bi].target='_self';" +
                             "function tryDoc(d){" +
                             "  if(!d) return null;" +
                             "  var as=d.querySelectorAll('a');" +
                             "  for(var i=0;i<as.length;i++){" +
                             "    var t=(as[i].innerText||'')+(as[i].title||'');" +
                             "    if(t.indexOf('教务')>=0){" +
-                            // 门户里的入口常是 target=_blank，WebView 点了不会在当前窗口导航，
-                            // 所以优先直接改 location，绕开新窗口
+                            // 优先直接改 location，绕开新窗口
                             "      var h=as[i].href||'';" +
                             "      if(h && h.indexOf('javascript')!==0 && h!=='#' && h.indexOf('void')<0){" +
-                            "        location.href=h; return 'NAV:'+h.slice(0,80);" +
+                            "        location.href=h; return 'NAV:'+h.slice(0,120);" +
                             "      }" +
+                            "      as[i].target='_self';" +
                             "      if(as[i].click) as[i].click();" +
-                            "      return 'CLICKED:'+((as[i].innerText||'').slice(0,20));" +
+                            "      return 'CLICKED_A:'+((as[i].innerText||'').replace(/\\s+/g,' ').trim().slice(0,30));" +
                             "    }" +
                             "  }" +
                             "  var cards=d.querySelectorAll('div[onclick],li[onclick],span[onclick]');" +
                             "  for(var j=0;j<cards.length;j++){" +
                             "    if((cards[j].innerText||'').indexOf('教务')>=0){" +
-                            "      cards[j].click(); return 'CLICKED_DIV';" +
+                            // 带上 onclick 源码：失败时能看出入口到底怎么跳
+                            "      var oc=cards[j].getAttribute('onclick')||'';" +
+                            "      cards[j].click();" +
+                            "      return 'CLICKED_DIV|'+oc.slice(0,200);" +
+                            "    }" +
+                            "  }" +
+                            // 兜底：门户入口有时是普通 div/span（无 onclick/href），
+                            // 只靠文本判断，点击后靠事件冒泡到父级卡片。
+                            "  var all=d.querySelectorAll('*');" +
+                            "  for(var m=0;m<all.length;m++){" +
+                            "    var el=all[m];" +
+                            "    var et=(el.innerText||'').replace(/\\s+/g,' ').trim();" +
+                            "    if(et.length>0 && et.length<30 && et.indexOf('教务')>=0 && el.click){" +
+                            "      el.click(); return 'CLICKED_TEXT:'+et;" +
                             "    }" +
                             "  }" +
                             "  return null;" +
@@ -433,36 +490,54 @@ internal fun TimetableScraper(
                             "}" +
                             "return 'NO_LINK';})()"
                     view.evaluateJavascript(js) { raw ->
+                        val clickResult = decodeJsString(raw)
+                        android.util.Log.i("VPNScrape", "clickJwLink: $clickResult")
                         when {
-                            decodeJsString(raw).startsWith("CLICKED") -> {
-                                // 点击后 SSO 会跳转。这里不回调 inspect（局部函数不支持前向引用），
-                                // 直接等 5 秒后看落点再决定下一步。
+                            clickResult.startsWith("NAV:") ->
+                                view.loadUrl(clickResult.removePrefix("NAV:"))
+                            clickResult.startsWith("CLICKED") -> {
+                                // 点击后 SSO 可能异步跳转，等 5 秒再看落点和 window.open 目标
                                 view.postDelayed({
-                                    view.evaluateJavascript("location.href") { r2 ->
-                                        val u2 = decodeJsString(r2)
+                                    view.evaluateJavascript(
+                                        "(function(){return (window.__yhOpen||'')+'|'+location.href;})()"
+                                    ) { r2 ->
+                                        val info = decodeJsString(r2)
+                                        val opened = info.substringBefore('|')
+                                        val u2 = info.substringAfter('|')
+                                        android.util.Log.i(
+                                            "VPNScrape",
+                                            "after click: open=$opened now=$u2",
+                                        )
                                         when {
+                                            // 钩到的 window.open 目标：直接在本 WebView 打开。
+                                            // 门户给的是直连 jw 地址，必须改成 VPN 代理域，
+                                            // 否则会落到没有 TGC 的直连 CAS 登录页。
+                                            opened.startsWith("http") -> {
+                                                portalClicks = 0
+                                                val target =
+                                                    com.yh.schedule.core.WebConst.proxify(opened)
+                                                android.util.Log.i("VPNScrape", "open proxified: $target")
+                                                view.loadUrl(target)
+                                            }
                                             u2.contains("xskb/xskb_list") -> grab(view)
-                                            u2.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) ->
+                                            u2.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) -> {
+                                                portalClicks = 0
                                                 view.loadUrl(com.yh.schedule.core.WebConst.JW_TIMETABLE_URL)
-                                            else -> view.loadUrl(com.yh.schedule.core.WebConst.PORTAL_URL)
+                                            }
+                                            portalClicks < 3 -> {
+                                                portalClicks++
+                                                view.loadUrl(com.yh.schedule.core.WebConst.PORTAL_URL)
+                                            }
+                                            else -> dumpPortal(
+                                                view,
+                                                "点了教务入口但页面没跳转｜$clickResult",
+                                            )
                                         }
                                     }
                                 }, 5000)
                             }
                             attempt < 3 -> view.postDelayed({ clickJwLink(view, attempt + 1) }, 3000)
-                            else -> {
-                                // 把当前 URL 和页面正文片段带出来：失败原因能直接看到，
-                                // 不用靠连电脑抓日志
-                                view.evaluateJavascript(
-                                    "(location.href+' || '+((document.body&&document.body.innerText)?"
-                                        + "document.body.innerText.replace(/\\s+/g,' ').slice(0,60):''))"
-                                ) { info ->
-                                    onFail(
-                                        "门户里没找到教务入口｜当前页: " + decodeJsString(info) +
-                                                "｜轨迹: " + trailText()
-                                    )
-                                }
-                            }
+                            else -> dumpPortal(view, "门户里没找到教务入口")
                         }
                     }
                 }
@@ -470,9 +545,40 @@ internal fun TimetableScraper(
                 fun inspect(view: WebView) {
                     view.evaluateJavascript("location.href") { raw ->
                         val u = decodeJsString(raw)
+                        android.util.Log.i("VPNScrape", "inspect: $u")
+                        view.evaluateJavascript(
+                            "(function(){return (document.title||'')+'|'+document.readyState;})()"
+                        ) { t ->
+                            android.util.Log.i("VPNScrape", "title: " + decodeJsString(t))
+                        }
                         trail(u)
                         when {
-                            u.contains("cas.paas.cdut.edu.cn") || u.contains("sso/login") -> {
+                            // VPN 认证页：TGC 有效时应自动带 ticket 跳回教务；
+                            // 停在这里说明 VPN 会话过期，只能让用户重新登录
+                            u.contains("cas-paas-cdut-edu-cn-s.vpn.cdut.edu.cn") -> {
+                                if (retry < 2) {
+                                    retry++
+                                    view.postDelayed({ inspect(view) }, 4000)
+                                } else {
+                                    onFail("登录已过期（VPN 认证页未自动通过），请到「服务」页重新登录")
+                                }
+                            }
+                            // 直连 CAS：VPN 模式下它没有 TGC，改走代理域的教务 SSO
+                            u.contains("cas.paas.cdut.edu.cn") -> {
+                                if (com.yh.schedule.core.WebConst.USE_VPN) {
+                                    view.loadUrl(
+                                        com.yh.schedule.core.WebConst.proxify(
+                                            "https://jw.cdut.edu.cn/sso/login.jsp"
+                                        )
+                                    )
+                                } else if (retry < 3) {
+                                    retry++
+                                    view.postDelayed({ inspect(view) }, 4000)
+                                } else {
+                                    onFail("登录已过期（仍停留在认证页）")
+                                }
+                            }
+                            u.contains("sso/login") -> {
                                 if (retry < 3) {
                                     retry++
                                     view.postDelayed({ inspect(view) }, 4000)
@@ -544,6 +650,17 @@ internal fun TimetableScraper(
                 webView = this
                 // 起始页由开关决定：VPN 模式先进门户，直连模式直接进教务
                 loadUrl(com.yh.schedule.core.WebConst.SCRAPE_ENTRY_URL)
+
+                // 兜底轮询：教务 SSO 跳转链有时页面加载完了也不回调 onPageFinished
+                // （表现为永远停在「正在检查教务系统登陆状态」）。每 5 秒看一次落点，
+                // 状态机照常推进；成功抓取后 grabbed 会拦住后续轮询。
+                val wv = this
+                fun poll() {
+                    if (grabbed) return
+                    inspect(wv)
+                    wv.postDelayed({ poll() }, 5000)
+                }
+                wv.postDelayed({ poll() }, 6000)
             }
         },
     )

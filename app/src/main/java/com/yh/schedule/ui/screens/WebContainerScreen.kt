@@ -193,7 +193,9 @@ fun WebContainerScreen(
                                 if (request?.isForMainFrame == true) loadError = true
                             }
                         }
-                        loadUrl(url)
+                        // VPN 模式下把教务/门户的直连地址改写成代理域；其他站点（图书馆、
+                        // 邮箱等）原样访问，避免把本来公开的页面也拉进 VPN
+                        loadUrl(com.yh.schedule.core.WebConst.proxify(url))
                     }
                 },
             )
@@ -256,12 +258,27 @@ private const val FORCE_DARK_JS = """
 })();
 """
 
-/** 读取页面文本，用于识别未登录 JSON 与空白页 */
+/**
+ * 读取页面文本，用于识别未登录 JSON 与空白页。
+ *
+ * 强智不少入口（成绩查询 cjcx_frm、考试安排等）是 frameset/iframe 套壳，
+ * 外层 document.body 本身就是空的，只看外层会把「其实已经渲染出来」的页面
+ * 误判成白屏，弹出「该入口暂未开放」。所以内层 frame 的文本也要拼进来。
+ */
 private const val SESSION_CHECK_JS = """
 (function() {
-  try {
-    return document.body ? (document.body.innerText || '') : '';
-  } catch (e) { return ''; }
+  function textOf(d) {
+    try { return d && d.body ? (d.body.innerText || '') : ''; } catch (e) { return ''; }
+  }
+  var s = textOf(document);
+  var frames = document.querySelectorAll('iframe, frame');
+  for (var i = 0; i < frames.length; i++) {
+    try {
+      var inner = textOf(frames[i].contentDocument);
+      if (inner) s += '\n' + inner;
+    } catch (e) { /* 跨域 iframe 读不到，忽略 */ }
+  }
+  return s;
 })()
 """
 

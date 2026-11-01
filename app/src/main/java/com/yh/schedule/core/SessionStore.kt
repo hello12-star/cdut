@@ -70,6 +70,9 @@ class SessionStore(private val context: Context) {
 
         /** 时间选择器是否无限循环滚动 */
         private val KEY_INFINITE_WHEEL = booleanPreferencesKey("infinite_wheel")
+
+        /** 冷启动后是否用已保存的账密在后台自动刷新一次 CAS 登录 */
+        private val KEY_AUTO_REFRESH_LOGIN = booleanPreferencesKey("auto_refresh_login")
     }
 
     val demoMode: Flow<Boolean> = context.dataStore.data.map { it[KEY_DEMO_MODE] ?: true }
@@ -109,6 +112,10 @@ class SessionStore(private val context: Context) {
     val infiniteWheel: Flow<Boolean> =
         context.dataStore.data.map { it[KEY_INFINITE_WHEEL] ?: true }
 
+    /** 冷启动后是否自动刷新一次 CAS 登录（默认关，按需开启） */
+    val autoRefreshLogin: Flow<Boolean> =
+        context.dataStore.data.map { it[KEY_AUTO_REFRESH_LOGIN] ?: false }
+
     suspend fun setThemeMode(mode: String) {
         context.dataStore.edit { it[KEY_THEME_MODE] = mode }
     }
@@ -143,6 +150,10 @@ class SessionStore(private val context: Context) {
 
     suspend fun setInfiniteWheel(on: Boolean) {
         context.dataStore.edit { it[KEY_INFINITE_WHEEL] = on }
+    }
+
+    suspend fun setAutoRefreshLogin(on: Boolean) {
+        context.dataStore.edit { it[KEY_AUTO_REFRESH_LOGIN] = on }
     }
 
     suspend fun setDemoMode(on: Boolean) {

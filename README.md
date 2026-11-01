@@ -70,6 +70,31 @@
 ```
 行标签：`第一二节 / 第三四节 / 中午 / 第五六节 / 第七八节 / 第九十十一节 / 备注`。
 
+## 校外 WebVPN 链路（2026-11-01 打通）
+
+`WebConst.USE_VPN = true` 时整条链路走校园 WebVPN；校外可用，校内同样可用。
+
+```
+登录：vpn.cdut.edu.cn/public/cas_login → CAS（代理域）→ vpn.cdut.edu.cn/portal
+抓取：门户 bsdt 首页 → 点「教务管理系统」
+      → 门户实际调用 openExpress('https://jw.cdut.edu.cn/sso/login.jsp', ...)
+      → 抓取 WebView 钩住 window.open 拿到目标地址，并改写成代理域
+      → jw-cdut-edu-cn-s.vpn.cdut.edu.cn:8118/sso/login.jsp
+      → 代理 CAS 凭 VPN 登录拿到的 TGC 免密 → 学期理论课表
+```
+
+踩坑与结论：
+
+| 现象 | 原因 | 修法 |
+|---|---|---|
+| 点「教务管理系统」后 URL 原地不动，反复重载门户 | 入口用 `window.open`/`target=_blank`，抓取 WebView 没开 `onCreateWindow`，点击等于没点 | 注入 `window.open` 钩子记录目标 URL，并把 `target=_blank` 改回当前窗口 |
+| 拿到目标地址后跳到 `cas.paas.cdut.edu.cn` 登录页 | 门户给的是**直连** jw 地址；VPN 的 TGC 只在代理域 `cas-paas-...:8118` 上 | `WebConst.proxify()` 把 jw / cas / bsdt 改写成代理域；查询中心容器同样适用 |
+| 登录成功但页面永远「正在检查教务系统登陆状态」 | 教务 SSO 跳转链偶发不回调 `onPageFinished` | 抓取器加 5 秒轮询兜底 |
+| 成绩查询页正常渲染却弹「该入口暂未开放」 | 强智 `cjcx_frm` 是 frameset 套壳，外层 body 没有文本 | 空白检测把内层 frame 文本一起算 |
+
+选项页「网络接入 → 自动刷新登录」：冷启动后用已保存账密在后台静默登录一次 CAS
+（对标 HFUT 的「自动刷新登录状态」，默认关闭，耗时较长，按需开启）。
+
 ## 功能清单（MVP 已完成）
 
 - [x] 统一认证登录（WebView，密码不进 App）

@@ -70,6 +70,9 @@ class Repository(
     /** 时间选择器是否无限循环滚动 */
     val infiniteWheel: Flow<Boolean> = store.infiniteWheel
 
+    /** 冷启动后是否自动刷新一次 CAS 登录 */
+    val autoRefreshLogin: Flow<Boolean> = store.autoRefreshLogin
+
     suspend fun setThemeMode(mode: String) = store.setThemeMode(mode)
 
     suspend fun setShowWeekendDefault(on: Boolean) = store.setShowWeekendDefault(on)
@@ -87,6 +90,8 @@ class Repository(
     suspend fun setCourseLineScale(value: Float) = store.setCourseLineScale(value)
 
     suspend fun setInfiniteWheel(on: Boolean) = store.setInfiniteWheel(on)
+
+    suspend fun setAutoRefreshLogin(on: Boolean) = store.setAutoRefreshLogin(on)
 
     /** 登录：demo=true 直接进入演示模式；真实模式走 WebView 统一认证（见 CasLoginScreen） */
     suspend fun login(account: String, password: String, demo: Boolean): Result<Unit> {
@@ -305,6 +310,7 @@ class Repository(
             courseTextScale = store.courseTextScale.first(),
             courseLineScale = store.courseLineScale.first(),
             infiniteWheel = store.infiniteWheel.first(),
+            autoRefreshLogin = store.autoRefreshLogin.first(),
             termStartMonday = store.termStartMonday(),
         )
         json.encodeToString(BackupPayload(events = events, prefs = prefs))
@@ -349,6 +355,7 @@ class Repository(
             store.setCourseTextScale(p.courseTextScale)
             store.setCourseLineScale(p.courseLineScale)
             store.setInfiniteWheel(p.infiniteWheel)
+            store.setAutoRefreshLogin(p.autoRefreshLogin)
             p.termStartMonday?.let { iso ->
                 runCatching { LocalDate.parse(iso) }.getOrNull()?.let { d ->
                     store.saveTermStartMonday(d.toString())

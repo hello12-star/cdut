@@ -106,6 +106,7 @@ fun OptionsScreen(
     val courseTextScale by repo.courseTextScale.collectAsState(initial = 1f)
     val courseLineScale by repo.courseLineScale.collectAsState(initial = 1f)
     val infiniteWheel by repo.infiniteWheel.collectAsState(initial = true)
+    val autoRefresh by repo.autoRefreshLogin.collectAsState(initial = false)
 
     var alphaDraft by remember { mutableFloatStateOf(courseAlpha) }
     var textScaleDraft by remember { mutableFloatStateOf(courseTextScale) }
@@ -316,11 +317,18 @@ fun OptionsScreen(
                     icon = Icons.Filled.Language,
                     title = "接入方式",
                     subtitle = if (WebConst.USE_VPN) {
-                        "校园 VPN 代理域"
+                        "校园 VPN 代理域 · 校外可用"
                     } else {
                         "校园网直连 · 校外需先连校园 VPN"
                     },
                 )
+                OptionDivider()
+                OptionSwitchRow(
+                    icon = Icons.Filled.Refresh,
+                    title = "自动刷新登录",
+                    subtitle = "冷启动后用已保存账号密码在后台登录一次 CAS；耗时较长，按需开启",
+                    checked = autoRefresh,
+                ) { on -> scope.launch { repo.setAutoRefreshLogin(on) } }
                 OptionDivider()
                 OptionRow(
                     icon = Icons.Filled.CalendarMonth,

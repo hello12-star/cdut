@@ -24,8 +24,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -128,8 +130,20 @@ fun AppRoot(app: CdutApp) {
 @Composable
 fun MainNav(repo: Repository, darkTheme: Boolean = false) {
     val nav = rememberNavController()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     var showRelogin by remember { androidx.compose.runtime.mutableStateOf(false) }
     val forceWebViewDark by repo.webViewDark.collectAsState(initial = false)
+
+    // D4 自动刷新登录：只认「冷启动时」的开关值。中途在选项页打开开关不会立刻触发，
+    // 避免用户点开关的瞬间被后台登录卡住。
+    var coldStartAutoRefresh by remember { mutableStateOf<Boolean?>(null) }
+    var autoLoginCreds by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var autoLoginDone by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val on = repo.autoRefreshLogin.first()
+        coldStartAutoRefresh = on
+        if (on) autoLoginCreds = repo.savedCredentials()
+    }
 
     // 登录覆盖层打开时，系统返回键只关掉登录页，而不是退出整个应用
     //（不拦的话系统返回会直接 finish Activity，用户从"服务→刷新登录状态"进来会被踢出 App）
@@ -160,6 +174,23 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
                         nav.popBackStack()
                     },
                 )
+            }
+        }
+
+        // D4：冷启动后台刷新登录。成功/失败都只提示一次，不阻塞界面。
+        val creds = autoLoginCreds
+        if (coldStartAutoRefresh == true && creds != null && !autoLoginDone) {
+            com.yh.schedule.ui.screens.AutoLoginRefresher(
+                account = creds.first,
+                password = creds.second,
+            ) { ok ->
+                autoLoginDone = true
+                val msg = if (ok) {
+                    "自动刷新登录成功"
+                } else {
+                    "自动刷新登录失败，可在选项页手动刷新"
+                }
+                android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
             }
         }
 

@@ -1,7 +1,7 @@
 # 源码对照清单与改造计划（v0.1.5 → 0.1.7）
 
 > 参考源码：`github-sources/HFUT-Schedule`（主参考）、`github-sources/SmartHNU`（备选）、`github-sources/libs`（22 个库）
-> 状态：**A+B、C+D（C3/D4 除外）已完成并验证（2026-11-01）**
+> 状态：**A+B、C+D（C3 除外）、WebVPN 链路与 D4 已完成并验证（2026-11-01）**
 > 执行记录见文末「六、执行记录与决策」与「七、C+D 执行记录」。
 
 ## 一、对照范围与方法
@@ -166,7 +166,6 @@
 
 ### 尚未执行
 - 批次 C3（课表背景图）：用户明确决定不做。
-- 批次 D4（自动刷新登录）：暂缓，等 VPN 链路做好后再实现。
 - 换账号清空日程、退出登录等依赖第二账号的实测。
 
 ## 七、C+D 执行记录（2026-11-01）
@@ -181,7 +180,7 @@
 
 ### 明确不做 / 暂缓
 - C3 背景图：不做（用户决定）。
-- D4 自动刷新登录：暂缓；VPN 做好后再实现（已写入项目记忆）。
+- D4 自动刷新登录：当时暂缓，VPN 打通后已补做（见第八节）。
 
 ### 验证
 - 滑块从 100% 调到 69% / 115% / 134% 后，课表块透明、文字变大、行距变宽，截图核对；随后恢复默认。
@@ -193,3 +192,41 @@
 ### 验证截图
 - `.screenshots/v016_*.png`（首页、查询中心、选项、关于、深色网页、会话过期弹窗、清除缓存等）。
 - `.screenshots/v017_*.png`（课表外观滑块、无限滚轮、导出/恢复备份、0.1.7 选项页等）。
+
+## 八、WebVPN 链路与 D4 执行记录（2026-11-01）
+
+### 背景
+`WebConst.USE_VPN` 切到 `true`，整条链路改走校园 WebVPN（校外与校内都可用）。
+此前卡在「门户里没找到教务入口」，点击后 URL 原地不动并无限重载门户。
+
+### 定位与修复
+1. **VPN CAS 页识别**：`cas-paas-cdut-edu-cn-s.vpn.cdut.edu.cn:8118` 不在 `onPageFinished`
+   的匹配里，登录按钮一直灰着、8 秒后才放开。已在 `CasLoginScreen` 补该分支。
+2. **门户入口不跳转**：点击后日志仍停在 `bsdt.../homePage.htm`。带出真实 onClick：
+   `openExpress('https://jw.cdut.edu.cn/sso/login.jsp','3','教务管理系统','4cf...')`。
+   门户用 `window.open` 打开新窗口，抓取 WebView 没有 `onCreateWindow`，点击被吞。
+   现由抓取器注入 `window.open` 钩子记录目标地址，并把 `target=_blank` 改回当前窗口。
+3. **直连 CAS 没有 TGC**：门户给的是直连 jw 地址，打开后落到 `cas.paas.cdut.edu.cn` 登录页。
+   新增 `WebConst.proxify()`：把 jw / cas / bsdt 改写成 `*-cdut-edu-cn-s.vpn.cdut.edu.cn:8118`，
+   由代理转发后在代理 CAS 上凭 VPN 登录的 TGC 免密进入教务。
+4. **SSO 链不回调 onPageFinished**：抓取器加 5 秒轮询兜底，避免永远卡在「正在检查」。
+5. **门户循环重载**：点击不导航时原逻辑无限重载门户；加 3 次上限并输出诊断。
+6. **查询容器误报空白**：强智成绩页是 frameset 套壳，外层 body 无文本；
+   空白检测改为把 iframe/frame 文本一起算。容器 URL 也统一走 `proxify()`。
+7. **Cookie 判定**：登录成功时补充读取 `cas-paas-...` 与 `jw-cdut-...` 代理域 Cookie；
+   成功判定从 `vpn.cdut.edu.cn/por` 收紧为 `/portal`。
+
+### D4 自动刷新登录
+- 新增偏好 `auto_refresh_login`（默认关），选项页「网络接入」增加开关与说明。
+- `AutoLoginRefresher`：冷启动时用 1dp 隐藏 WebView 打开 VPN CAS，
+  注入已保存账密并点登录，命中 VPN 门户/代理教务域即成功，最多提示一次 toast。
+- 只认冷启动时的开关值；会话中途打开开关不会立刻触发；随备份导出/导入。
+
+### 验证
+- VPN 登录：CAS → `vpn.cdut.edu.cn/portal` → 应用回到主界面。
+- 聚焦页抓取：日志 `open proxified: http://jw-cdut...:8118/sso/login.jsp` →
+  `xskb/xskb_list.do`（标题「学期理论课表」）→ 检查卡自动消失，轮询停止说明 `grabbed=true`。
+- 查询中心「成绩查询」：VPN 容器正常渲染筛选栏与成绩表头，不再弹「该入口暂未开放」。
+- 自动刷新登录：冷启动日志 `onPageFinished: vpn.cdut.edu.cn/portal/#!/service` → `done=true`。
+- 截图：`.screenshots/v018-v024_*.png`。
+- 版本仍为 `0.1.7 / 7`（0.1.7 尚未对外分发，本轮 VPN 修复并入同一版本）。
