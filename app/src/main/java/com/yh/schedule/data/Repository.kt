@@ -134,6 +134,9 @@ class Repository(
         }
 
         store.saveCasCookie(casCookie)
+        // 记下本次登录用的是直连还是 VPN：切换网络后若方式变了，
+        // 会话不通用，需要静默重登一次
+        store.saveLoginAccessVpn(com.yh.schedule.core.WebConst.USE_VPN)
         if (account.isNotBlank()) {
             if (remember) store.saveCredentials(account, password)
             else store.clearCredentials()
@@ -146,6 +149,14 @@ class Repository(
         // 课表/成绩的真实数据均由 WebView 链路直接携带会话；
         // 此处保存的 Cookie 留作后续接入 OkHttp 数据源（如成绩查询）时复用。
     }
+
+    /** 上次成功登录时用的接入方式；null = 旧版本未记录 */
+    suspend fun loginAccessVpn(): Boolean? = store.loginAccessVpn()
+
+    /** 静默重登成功后，把接入方式对齐到当前网络 */
+    suspend fun markLoginAccessMode() = store.saveLoginAccessVpn(
+        com.yh.schedule.core.WebConst.USE_VPN
+    )
 
     /** 已保存的账号密码（用于登录页自动填充） */
     suspend fun savedCredentials(): Pair<String, String>? = store.credentials()

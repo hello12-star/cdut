@@ -215,6 +215,11 @@
    空白检测改为把 iframe/frame 文本一起算。容器 URL 也统一走 `proxify()`。
 7. **Cookie 判定**：登录成功时补充读取 `cas-paas-...` 与 `jw-cdut-...` 代理域 Cookie；
    成功判定从 `vpn.cdut.edu.cn/por` 收紧为 `/portal`。
+8. **直连/VPN 自动切换**：`NetworkAccess` 在启动和网络变化时判定：
+   WiFi 先探测 `jw.cdut.edu.cn` 是否可达（任意 HTTP 响应都算），可达=校园网直连，
+   不可达=校外 WiFi 走 VPN；蜂窝流量一律走 VPN。判定完成前显示短暂加载圈。
+   接入方式变化后直连与 VPN 会话不通用，用已保存账密静默重登一次
+   （`login_access_vpn` 记录上次登录方式；选项页显示当前模式）。
 
 ### D4 自动刷新登录
 - 新增偏好 `auto_refresh_login`（默认关），选项页「网络接入」增加开关与说明。
@@ -228,5 +233,11 @@
   `xskb/xskb_list.do`（标题「学期理论课表」）→ 检查卡自动消失，轮询停止说明 `grabbed=true`。
 - 查询中心「成绩查询」：VPN 容器正常渲染筛选栏与成绩表头，不再弹「该入口暂未开放」。
 - 自动刷新登录：冷启动日志 `onPageFinished: vpn.cdut.edu.cn/portal/#!/service` → `done=true`。
+- 接入方式切换（模拟器实测）：
+  - 默认蜂窝 → 选项页显示「校外 WebVPN」；
+  - 连接 WiFi（宿主可直连 jw）→ 自动切到「校园网直连」，日志显示直连 CAS 登录成功
+    （`cas.paas.cdut.edu.cn` → `jsxsd/framework/xsMainV.htmlx`），聚焦页抓取无错误；
+  - 关闭 WiFi → 自动切回 VPN，日志 `vpn.cdut.edu.cn/portal/#!/service` → `done=true`，
+    再次下拉抓取到「学期理论课表」。
 - 截图：`.screenshots/v018-v024_*.png`。
 - 版本仍为 `0.1.7 / 7`（0.1.7 尚未对外分发，本轮 VPN 修复并入同一版本）。

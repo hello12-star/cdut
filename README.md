@@ -70,9 +70,19 @@
 ```
 行标签：`第一二节 / 第三四节 / 中午 / 第五六节 / 第七八节 / 第九十十一节 / 备注`。
 
-## 校外 WebVPN 链路（2026-11-01 打通）
+## 直连 / WebVPN 自动切换（2026-11-01）
 
-`WebConst.USE_VPN = true` 时整条链路走校园 WebVPN；校外可用，校内同样可用。
+`NetworkAccess` 在启动时与网络切换时自动判定接入方式：
+
+- 校园网 WiFi（能直连到 `jw.cdut.edu.cn`，任意 HTTP 响应即算可达）→ 直连；
+- 蜂窝流量 / 校外 WiFi（直连探测失败）→ 校园 WebVPN；
+- 判定完成前显示一个短暂加载圈（WiFi 下最多等 2.5 秒）。
+
+两种接入的会话不通用，因此接入方式一变，App 会用已保存账密静默重登一次
+（记录在 `login_access_vpn`），并在选项页「网络接入 → 接入方式」显示当前模式。
+
+VPN 登录入口：`https://vpn.cdut.edu.cn/public/cas_login?entry_id=2`；
+登录后落在 `https://vpn.cdut.edu.cn/portal`，无需安装 VPN 客户端（浏览器版 WebVPN）。
 
 ```
 登录：vpn.cdut.edu.cn/public/cas_login → CAS（代理域）→ vpn.cdut.edu.cn/portal

@@ -73,6 +73,9 @@ class SessionStore(private val context: Context) {
 
         /** 冷启动后是否用已保存的账密在后台自动刷新一次 CAS 登录 */
         private val KEY_AUTO_REFRESH_LOGIN = booleanPreferencesKey("auto_refresh_login")
+
+        /** 上次成功登录时使用的接入方式：true=WebVPN，false=校园网直连。旧版本没有该键 */
+        private val KEY_LOGIN_ACCESS_VPN = booleanPreferencesKey("login_access_vpn")
     }
 
     val demoMode: Flow<Boolean> = context.dataStore.data.map { it[KEY_DEMO_MODE] ?: true }
@@ -115,6 +118,14 @@ class SessionStore(private val context: Context) {
     /** 冷启动后是否自动刷新一次 CAS 登录（默认关，按需开启） */
     val autoRefreshLogin: Flow<Boolean> =
         context.dataStore.data.map { it[KEY_AUTO_REFRESH_LOGIN] ?: false }
+
+    /** 上次成功登录时的接入方式；null = 旧版本未记录 */
+    suspend fun loginAccessVpn(): Boolean? =
+        context.dataStore.data.first()[KEY_LOGIN_ACCESS_VPN]
+
+    suspend fun saveLoginAccessVpn(on: Boolean) {
+        context.dataStore.edit { it[KEY_LOGIN_ACCESS_VPN] = on }
+    }
 
     suspend fun setThemeMode(mode: String) {
         context.dataStore.edit { it[KEY_THEME_MODE] = mode }

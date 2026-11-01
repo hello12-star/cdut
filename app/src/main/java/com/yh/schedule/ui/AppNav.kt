@@ -86,6 +86,29 @@ fun AppRoot(app: CdutApp) {
     }
     var showCasLogin by remember { androidx.compose.runtime.mutableStateOf(false) }
 
+    // 接入方式判定：校园网 WiFi 直连、蜂窝/校外 WiFi 走 VPN。
+    // 判定完成前不渲染登录/主界面，避免先把 CAS 页加载到错误的通道上。
+    var accessReady by remember { mutableStateOf(false) }
+    val rootScope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(Unit) {
+        com.yh.schedule.core.NetworkAccess.refresh(ctx.applicationContext)
+        accessReady = true
+    }
+    // 运行中切换网络（WiFi ↔ 流量）时重新判定；版本号变化会触发 MainNav 里的静默重登
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        val cm = ctx.getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+                as? android.net.ConnectivityManager
+        val cb = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                rootScope.launch {
+                    com.yh.schedule.core.NetworkAccess.refresh(ctx.applicationContext)
+                }
+            }
+        }
+        runCatching { cm?.registerDefaultNetworkCallback(cb) }
+        onDispose { runCatching { cm?.unregisterNetworkCallback(cb) } }
+    }
+
     // 深色模式是用户偏好（选项页可改），因此主题必须在这里包裹，不能放在 MainActivity
     val themeMode by store.themeMode.collectAsState(initial = "system")
     val darkTheme = when (themeMode) {
@@ -110,7 +133,12 @@ fun AppRoot(app: CdutApp) {
                 .background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding(),
         ) {
-            when (loggedIn) {
+            if (!accessReady) {
+                // 正在判定直连/VPN（WiFi 下最多等 2.5 秒探测）
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.align(androidx.compose.ui.Alignment.Center),
+                )
+            } else when (loggedIn) {
                 null -> { /* DataStore 首次读取中 */ }
                 false -> if (showCasLogin) {
                     com.yh.schedule.ui.screens.CasLoginScreen(
@@ -134,15 +162,46 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
     var showRelogin by remember { androidx.compose.runtime.mutableStateOf(false) }
     val forceWebViewDark by repo.webViewDark.collectAsState(initial = false)
 
-    // D4 自动刷新登录：只认「冷启动时」的开关值。中途在选项页打开开关不会立刻触发，
-    // 避免用户点开关的瞬间被后台登录卡住。
-    var coldStartAutoRefresh by remember { mutableStateOf<Boolean?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    // 静默重登的两种触发：
+    // ① 选项页开启「自动刷新登录」→ 冷启动后台刷新一次（D4，只认冷启动时的开关值）；
+    // ② 接入方式变了（校园网 ↔ 流量/校外 WiFi）→ 两种会话不通用，必须重登一次。
+    val accessVersion by com.yh.schedule.core.NetworkAccess.version.collectAsState()
     var autoLoginCreds by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var autoLoginReason by remember { mutableStateOf<String?>(null) }   // cold / mode
     var autoLoginDone by remember { mutableStateOf(false) }
+    var seenAccessVersion by remember { mutableStateOf<Int?>(null) }
+
     LaunchedEffect(Unit) {
-        val on = repo.autoRefreshLogin.first()
-        coldStartAutoRefresh = on
-        if (on) autoLoginCreds = repo.savedCredentials()
+        val creds = repo.savedCredentials()
+        autoLoginCreds = creds
+        val coldRefresh = repo.autoRefreshLogin.first()
+        val lastMode = repo.loginAccessVpn()
+        autoLoginReason = when {
+            creds == null -> null
+            coldRefresh -> "cold"
+            lastMode != null && lastMode != com.yh.schedule.core.WebConst.USE_VPN -> "mode"
+            else -> null
+        }
+    }
+
+    // 首次进入只记基线；运行中网络切换导致的方式变化才触发静默重登
+    LaunchedEffect(accessVersion) {
+        val seen = seenAccessVersion
+        if (seen == null) {
+            seenAccessVersion = accessVersion
+            return@LaunchedEffect
+        }
+        if (accessVersion > seen) {
+            seenAccessVersion = accessVersion
+            val creds = repo.savedCredentials()
+            if (creds != null) {
+                autoLoginCreds = creds
+                autoLoginDone = false
+                autoLoginReason = "mode"
+            }
+        }
     }
 
     // 登录覆盖层打开时，系统返回键只关掉登录页，而不是退出整个应用
@@ -177,18 +236,27 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
             }
         }
 
-        // D4：冷启动后台刷新登录。成功/失败都只提示一次，不阻塞界面。
+        // 静默重登：冷启动刷新（D4）或网络接入方式切换时各触发一次，不阻塞界面。
         val creds = autoLoginCreds
-        if (coldStartAutoRefresh == true && creds != null && !autoLoginDone) {
+        val reloginReason = autoLoginReason
+        if (creds != null && reloginReason != null && !autoLoginDone) {
             com.yh.schedule.ui.screens.AutoLoginRefresher(
                 account = creds.first,
                 password = creds.second,
             ) { ok ->
                 autoLoginDone = true
-                val msg = if (ok) {
-                    "自动刷新登录成功"
+                autoLoginReason = null
+                if (ok) scope.launch { repo.markLoginAccessMode() }
+                val modeLabel = if (com.yh.schedule.core.WebConst.USE_VPN) {
+                    "校外 VPN"
                 } else {
-                    "自动刷新登录失败，可在选项页手动刷新"
+                    "校园网直连"
+                }
+                val msg = when {
+                    ok && reloginReason == "mode" -> "已切换到$modeLabel，登录已刷新"
+                    ok -> "自动刷新登录成功"
+                    reloginReason == "mode" -> "已切换到$modeLabel，请重新登录"
+                    else -> "自动刷新登录失败，可在选项页手动刷新"
                 }
                 android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
             }

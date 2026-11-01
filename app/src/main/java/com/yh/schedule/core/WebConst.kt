@@ -12,18 +12,30 @@ package com.yh.schedule.core
  * 保证登录、容器、抓取处于同一指纹下。
  *
  * ## 直连 / VPN 双通道
- * 校外无法直连 `jw.cdut.edu.cn`（教育网 IP，实测 ping 100% 丢包），需走校园 WebVPN。
- * 但 VPN 链路要求「登录 VPN → 进智慧校园门户 → 点教务管理系统 → SSO 跳转」，
- * 该流程**尚未打通**（仍报「未取到会话凭据」，原因未定位）。
+ * 校外无法直连 `jw.cdut.edu.cn`（教育网 IP），需走校园 WebVPN；校内校园网则可直连。
+ * 运行期由 [NetworkAccess] 自动判定：WiFi 下先探测直连是否可达，
+ * 可达走直连，不可达（校外 WiFi）改走 VPN；蜂窝流量一律走 VPN。
  *
- * 因此 [USE_VPN] 默认 false 走校园网内直连，保证基本功能可用；
- * VPN 的常量、门户点击逻辑、URL 轨迹诊断全部保留，链路验证通过后
- * **只需把 USE_VPN 改成 true** 即可整体切换。
+ * VPN 链路（2026-11-01 已打通）：
+ * `vpn.cdut.edu.cn/public/cas_login` → CAS 代理域 → VPN 门户 → 「教务管理系统」
+ * → 代理域 `jw-cdut-edu-cn-s.vpn.cdut.edu.cn:8118` → SSO → 课表页。
  */
 object WebConst {
 
-    /** 是否走校园 WebVPN。切换整条链路的唯一开关。 */
-    const val USE_VPN = true
+    /**
+     * 是否走校园 WebVPN。运行期由 [NetworkAccess] 根据网络自动维护：
+     * 校园网 WiFi 直连，蜂窝流量 / 校外 WiFi 走 VPN。
+     *
+     * 保留 `USE_VPN` 这个名字，现有调用点（登录、抓取、容器、选项页）无需改动。
+     */
+    @Volatile
+    private var vpnEnabled: Boolean = true
+
+    val USE_VPN: Boolean get() = vpnEnabled
+
+    internal fun setVpnEnabled(on: Boolean) {
+        vpnEnabled = on
+    }
 
     // ---------- VPN 侧 ----------
 

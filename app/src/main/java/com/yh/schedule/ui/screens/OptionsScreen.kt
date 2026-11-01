@@ -107,6 +107,9 @@ fun OptionsScreen(
     val courseLineScale by repo.courseLineScale.collectAsState(initial = 1f)
     val infiniteWheel by repo.infiniteWheel.collectAsState(initial = true)
     val autoRefresh by repo.autoRefreshLogin.collectAsState(initial = false)
+    // 接入方式是运行期自动判定的：订阅版本号，网络切换后这一行文案跟着更新
+    val accessVersion by com.yh.schedule.core.NetworkAccess.version.collectAsState()
+    val useVpnNow = remember(accessVersion) { WebConst.USE_VPN }
 
     var alphaDraft by remember { mutableFloatStateOf(courseAlpha) }
     var textScaleDraft by remember { mutableFloatStateOf(courseTextScale) }
@@ -316,10 +319,10 @@ fun OptionsScreen(
                 OptionRow(
                     icon = Icons.Filled.Language,
                     title = "接入方式",
-                    subtitle = if (WebConst.USE_VPN) {
-                        "校园 VPN 代理域 · 校外可用"
+                    subtitle = if (useVpnNow) {
+                        "当前：校外 WebVPN（校园网 WiFi 时自动改为直连）"
                     } else {
-                        "校园网直连 · 校外需先连校园 VPN"
+                        "当前：校园网直连（离开校园网后自动改用 WebVPN）"
                     },
                 )
                 OptionDivider()
