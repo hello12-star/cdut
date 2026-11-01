@@ -63,9 +63,15 @@ import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyGridState
 
-/** 查询中心的一个入口。Web 类打开官方页面，本地类留在应用内 */
+/** 查询中心的一个入口。Web 类打开官方页面，Data 类抓取后原生展示 */
 private sealed interface QueryAction {
     data class Web(val url: String) : QueryAction
+
+    /** 教务页面：抓表格后用可读字号的原生界面展示。kind 决定表格的挑选方式 */
+    data class Data(val url: String, val kind: String = "generic") : QueryAction
+
+    /** 跳到 App 自己的课表页（不再重复打开网页课表） */
+    data object Timetable : QueryAction
 
     /** 本机聚合的成绩统计页（真实数据尚未接入时为空态） */
     data object LocalGrades : QueryAction
@@ -92,7 +98,7 @@ private const val JW = "https://jw.cdut.edu.cn/jsxsd"
 private val QUERIES = listOf(
     QueryEntry(
         "成绩查询", "教务 · 官方成绩单", "成绩 分数 学分 绩点 GPA 考试通过",
-        Icons.Filled.Assignment, QueryAction.Web("$JW/kscj/cjcx_frm"),
+        Icons.Filled.Assignment, QueryAction.Data("$JW/kscj/cjcx_frm", "grade"),
     ),
     QueryEntry(
         "成绩统计", "加权平均 · 平均绩点", "统计 加权 绩点 GPA 均分",
@@ -100,43 +106,43 @@ private val QUERIES = listOf(
     ),
     QueryEntry(
         "考试安排", "考场 · 时间", "考试 考场 补考 监考",
-        Icons.Filled.Event, QueryAction.Web("$JW/xsks/xsksap_query"),
+        Icons.Filled.Event, QueryAction.Data("$JW/xsks/xsksap_query", "exam"),
     ),
     QueryEntry(
         "我的课表", "教务 · 学期理论课表", "课表 课程 上课 教室",
-        Icons.Filled.School, QueryAction.Web("$JW/xskb/xskb_list.do"),
+        Icons.Filled.School, QueryAction.Timetable,
     ),
     QueryEntry(
         "培养方案", "学分完成情况", "培养 方案 学分 毕业要求",
-        Icons.Filled.MenuBook, QueryAction.Web("$JW/pyfa/topyfamx"),
+        Icons.Filled.MenuBook, QueryAction.Data("$JW/pyfa/topyfamx"),
     ),
     QueryEntry(
         "选课结果", "本学期选课", "选课 已选 课程 退课",
-        Icons.Filled.Checklist, QueryAction.Web("$JW/xkgl/xsxkjgcx"),
+        Icons.Filled.Checklist, QueryAction.Data("$JW/xkgl/xsxkjgcx"),
     ),
     QueryEntry(
         "缓考申请", "缓考 · 免修", "缓考 免修 申请",
-        Icons.Filled.HourglassEmpty, QueryAction.Web("$JW/kscj/hksq_query"),
+        Icons.Filled.HourglassEmpty, QueryAction.Data("$JW/kscj/hksq_query"),
     ),
     QueryEntry(
         "学籍信息", "个人信息 · 学籍状态", "学籍 信息 专业 班级 学号",
-        Icons.Filled.Badge, QueryAction.Web("$JW/xsxj/xjxxgl.do"),
+        Icons.Filled.Badge, QueryAction.Data("$JW/xsxj/xjxxgl.do"),
     ),
     QueryEntry(
         "学生评教", "教师评价 · 教学反馈", "评教 教师 评价 教学 课程",
-        Icons.Filled.RateReview, QueryAction.Web("$JW/xspj/xspj_find.do?Ves632DSdyV=NEW_XSD_JXPJ"),
+        Icons.Filled.RateReview, QueryAction.Data("$JW/xspj/xspj_find.do?Ves632DSdyV=NEW_XSD_JXPJ"),
     ),
     QueryEntry(
         "空教室", "空闲教室查询", "空教室 自习 教室 空闲 查询",
-        Icons.Filled.MeetingRoom, QueryAction.Web("$JW/kbcx/kbxx_query"),
+        Icons.Filled.MeetingRoom, QueryAction.Data("$JW/kbcx/kbxx_query"),
     ),
     QueryEntry(
         "补考报名", "补考 · 重修", "补考 重修 报名 考试",
-        Icons.Filled.Replay, QueryAction.Web("$JW/kscj/bkjc_query"),
+        Icons.Filled.Replay, QueryAction.Data("$JW/kscj/bkjc_query"),
     ),
     QueryEntry(
         "已收公告", "教务通知", "公告 通知 消息 教务",
-        Icons.Filled.Campaign, QueryAction.Web("$JW/ggly/ysgg_query"),
+        Icons.Filled.Campaign, QueryAction.Data("$JW/ggly/ysgg_query"),
     ),
     QueryEntry(
         "图书馆", "馆藏检索 · 研修室预约", "图书馆 借书 馆藏 研修室 自习",
@@ -182,6 +188,10 @@ private fun reorderQueries(all: List<QueryEntry>, order: String): List<QueryEntr
 fun QueryCenterScreen(
     repo: Repository,
     openWeb: (String, String) -> Unit,
+    /** 教务页面：抓取后原生展示（url, title, kind） */
+    openData: (String, String, String) -> Unit,
+    /** 跳到 App 自己的课表 tab */
+    onOpenTimetable: () -> Unit,
     /** 打开本机成绩统计页（由调用方以全屏覆盖层承载） */
     onOpenGradeStats: () -> Unit,
 ) {
@@ -280,6 +290,8 @@ fun QueryCenterScreen(
                     ) {
                         when (val a = entry.action) {
                             is QueryAction.Web -> openWeb(a.url, entry.title)
+                            is QueryAction.Data -> openData(a.url, entry.title, a.kind)
+                            QueryAction.Timetable -> onOpenTimetable()
                             QueryAction.LocalGrades -> onOpenGradeStats()
                         }
                     }

@@ -43,6 +43,7 @@ import com.yh.schedule.data.Repository
 import com.yh.schedule.ui.screens.AddEventScreen
 import com.yh.schedule.ui.screens.AboutScreen
 import com.yh.schedule.ui.screens.CourseDetailScreen
+import com.yh.schedule.ui.screens.DataPageScreen
 import com.yh.schedule.ui.screens.FocusScreen
 import com.yh.schedule.ui.screens.GradeStatsScreen
 import com.yh.schedule.ui.screens.LoginScreen
@@ -210,9 +211,18 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
 
     androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
         NavHost(navController = nav, startDestination = "main") {
-            composable("main") { MainScaffold(repo = repo, openWeb = { url, title ->
-                nav.navigate("web?url=${android.net.Uri.encode(url)}&title=${android.net.Uri.encode(title)}")
-            }, onRelogin = { showRelogin = true }) }
+            composable("main") { MainScaffold(
+                repo = repo,
+                openWeb = { url, title ->
+                    nav.navigate("web?url=${android.net.Uri.encode(url)}&title=${android.net.Uri.encode(title)}")
+                },
+                openData = { url, title, kind ->
+                    nav.navigate(
+                        "data?url=${android.net.Uri.encode(url)}&title=${android.net.Uri.encode(title)}&kind=$kind"
+                    )
+                },
+                onRelogin = { showRelogin = true },
+            ) }
             composable(
                 route = "web?url={url}&title={title}",
                 arguments = listOf(
@@ -231,6 +241,29 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
                     onRelogin = {
                         showRelogin = true
                         nav.popBackStack()
+                    },
+                )
+            }
+            composable(
+                route = "data?url={url}&title={title}&kind={kind}",
+                arguments = listOf(
+                    navArgument("url") { type = NavType.StringType },
+                    navArgument("title") { type = NavType.StringType },
+                    navArgument("kind") { type = NavType.StringType; defaultValue = "generic" },
+                ),
+            ) { entry ->
+                val url = entry.arguments?.getString("url").orEmpty()
+                val title = entry.arguments?.getString("title").orEmpty()
+                val kind = entry.arguments?.getString("kind").orEmpty().ifBlank { "generic" }
+                DataPageScreen(
+                    url = url,
+                    title = title,
+                    kind = kind,
+                    onBack = { nav.popBackStack() },
+                    onOpenRaw = { rawUrl, rawTitle ->
+                        nav.navigate(
+                            "web?url=${android.net.Uri.encode(rawUrl)}&title=${android.net.Uri.encode(rawTitle)}"
+                        )
                     },
                 )
             }
@@ -285,6 +318,7 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
 private fun MainScaffold(
     repo: Repository,
     openWeb: (String, String) -> Unit,
+    openData: (String, String, String) -> Unit,
     onRelogin: () -> Unit = {},
 ) {
     val tabs = listOf(
@@ -357,6 +391,8 @@ private fun MainScaffold(
                     2 -> QueryCenterScreen(
                         repo = repo,
                         openWeb = openWeb,
+                        openData = openData,
+                        onOpenTimetable = { selected = 0 },
                         onOpenGradeStats = { overlay = Overlay.Grade },
                     )
                     3 -> OptionsScreen(
