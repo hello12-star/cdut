@@ -116,6 +116,8 @@ fun YhDateRangePickerDialog(
 fun YhTimePicker(
     initial: String,
     modifier: Modifier = Modifier,
+    /** 滚轮是否无限循环（选项页偏好） */
+    enableInfiniteScroll: Boolean = true,
     onSelected: (String) -> Unit,
 ) {
     var init = initial.split(":").mapNotNull { it.toIntOrNull() }
@@ -136,6 +138,7 @@ fun YhTimePicker(
             data = hours,
             initialSelectedIndex = init[0],
             modifier = Modifier.weight(1f),
+            enableInfiniteScroll = enableInfiniteScroll,
             onSelect = { _, h -> hour = h },
         ) { h ->
             Text("%02d".format(h), style = MaterialTheme.typography.titleLarge)
@@ -147,6 +150,7 @@ fun YhTimePicker(
             data = minutes,
             initialSelectedIndex = minutes.indexOf(init[1]).coerceAtLeast(0),
             modifier = Modifier.weight(1f),
+            enableInfiniteScroll = enableInfiniteScroll,
             onSelect = { _, m -> minute = m },
         ) { m ->
             Text("%02d".format(m), style = MaterialTheme.typography.titleLarge)
@@ -164,6 +168,8 @@ fun YhTimePicker(
 fun YhTimeRangePickerDialog(
     isSchedule: Boolean,
     defaultValue: Pair<String, String>,
+    /** 滚轮是否无限循环（选项页偏好） */
+    enableInfiniteScroll: Boolean = true,
     onSelected: (Pair<String, String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -193,10 +199,16 @@ fun YhTimeRangePickerDialog(
                 )
 
                 if (isSchedule) {
-                    YhTimePicker(initial = defaultValue.first) { startTime = it }
+                    YhTimePicker(
+                        initial = defaultValue.first,
+                        enableInfiniteScroll = enableInfiniteScroll,
+                    ) { startTime = it }
                     HorizontalDivider()
                 }
-                YhTimePicker(initial = defaultValue.second) { endTime = it }
+                YhTimePicker(
+                    initial = defaultValue.second,
+                    enableInfiniteScroll = enableInfiniteScroll,
+                ) { endTime = it }
 
                 Row(modifier = Modifier.align(Alignment.End)) {
                     TextButton(

@@ -2,6 +2,8 @@ package com.yh.schedule.ui.screens
 
 import android.webkit.CookieManager
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DateRange
@@ -32,6 +35,9 @@ import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.SwipeRight
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Web
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -39,6 +45,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -59,7 +67,11 @@ import androidx.compose.ui.unit.dp
 import com.yh.schedule.core.SchoolCalendar
 import com.yh.schedule.core.WebConst
 import com.yh.schedule.data.Repository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.time.LocalDate
+import kotlin.math.roundToInt
 
 /**
  * 选项页：参考源码 HomeSettingScreen 的框架 —— 分组卡片 + 图标列表项。
@@ -81,6 +93,8 @@ fun OptionsScreen(
     var showThemePicker by remember { mutableStateOf(false) }
     var showClearCache by remember { mutableStateOf(false) }
     var showResetTerm by remember { mutableStateOf(false) }
+    var showRestoreConfirm by remember { mutableStateOf(false) }
+    var pendingRestore by remember { mutableStateOf<String?>(null) }
     var termStart by remember { mutableStateOf(repo.currentTermStartMonday()) }
     LaunchedEffect(Unit) { account = repo.currentAccount() }
 
@@ -88,12 +102,68 @@ fun OptionsScreen(
     val showWeekend by repo.showWeekendDefault.collectAsState(initial = false)
     val showOverdue by repo.showOverdueDefault.collectAsState(initial = false)
     val webViewDark by repo.webViewDark.collectAsState(initial = false)
+    val courseAlpha by repo.courseAlpha.collectAsState(initial = 1f)
+    val courseTextScale by repo.courseTextScale.collectAsState(initial = 1f)
+    val courseLineScale by repo.courseLineScale.collectAsState(initial = 1f)
+    val infiniteWheel by repo.infiniteWheel.collectAsState(initial = true)
+
+    var alphaDraft by remember { mutableFloatStateOf(courseAlpha) }
+    var textScaleDraft by remember { mutableFloatStateOf(courseTextScale) }
+    var lineScaleDraft by remember { mutableFloatStateOf(courseLineScale) }
+    LaunchedEffect(courseAlpha) { alphaDraft = courseAlpha }
+    LaunchedEffect(courseTextScale) { textScaleDraft = courseTextScale }
+    LaunchedEffect(courseLineScale) { lineScaleDraft = courseLineScale }
 
     val context = LocalContext.current
     val versionName = remember {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
         }.getOrNull().orEmpty()
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val result = runCatching {
+                    val raw = repo.exportBackupJson()
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.openOutputStream(uri)?.use { out ->
+                            out.write(raw.toByteArray(Charsets.UTF_8))
+                        } ?: error("无法打开输出文件")
+                    }
+                }
+                Toast.makeText(
+                    context,
+                    if (result.isSuccess) "备份已导出"
+                    else "导出失败：${result.exceptionOrNull()?.message.orEmpty()}",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val raw = runCatching {
+                    withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(uri)?.bufferedReader()?.use {
+                            it.readText()
+                        }
+                    }
+                }.getOrNull()
+                if (raw.isNullOrBlank()) {
+                    Toast.makeText(context, "读取备份失败", Toast.LENGTH_LONG).show()
+                } else {
+                    pendingRestore = raw
+                    showRestoreConfirm = true
+                }
+            }
+        }
     }
 
     LazyColumn(
@@ -184,6 +254,59 @@ fun OptionsScreen(
                     subtitle = "进入聚焦页时默认展开已过期日程",
                     checked = showOverdue,
                 ) { on -> scope.launch { repo.setShowOverdueDefault(on) } }
+                OptionDivider()
+                OptionSwitchRow(
+                    icon = Icons.Filled.Tune,
+                    title = "无限滚轮",
+                    subtitle = "时间选择器滑到头后继续循环，不会停住",
+                    checked = infiniteWheel,
+                ) { on -> scope.launch { repo.setInfiniteWheel(on) } }
+                OptionDivider()
+                OptionRow(
+                    icon = Icons.Filled.SwipeRight,
+                    title = "预测性返回",
+                    subtitle = "已启用系统预测性返回（Android 13+ 返回手势）",
+                )
+            }
+        }
+
+        item {
+            OptionSection("课表外观") {
+                OptionSliderRow(
+                    icon = Icons.Filled.Tune,
+                    title = "课程块透明度",
+                    valueText = "${(alphaDraft * 100).roundToInt()}%",
+                    value = alphaDraft,
+                    valueRange = 0.3f..1f,
+                    onValueChange = { alphaDraft = it },
+                    onValueChangeFinished = {
+                        scope.launch { repo.setCourseAlpha(alphaDraft) }
+                    },
+                )
+                OptionDivider()
+                OptionSliderRow(
+                    icon = Icons.Filled.MenuBook,
+                    title = "课程文字大小",
+                    valueText = "${(textScaleDraft * 100).roundToInt()}%",
+                    value = textScaleDraft,
+                    valueRange = 0.75f..1.35f,
+                    onValueChange = { textScaleDraft = it },
+                    onValueChangeFinished = {
+                        scope.launch { repo.setCourseTextScale(textScaleDraft) }
+                    },
+                )
+                OptionDivider()
+                OptionSliderRow(
+                    icon = Icons.Filled.MenuBook,
+                    title = "课程文字行距",
+                    valueText = "${(lineScaleDraft * 100).roundToInt()}%",
+                    value = lineScaleDraft,
+                    valueRange = 0.85f..1.6f,
+                    onValueChange = { lineScaleDraft = it },
+                    onValueChangeFinished = {
+                        scope.launch { repo.setCourseLineScale(lineScaleDraft) }
+                    },
+                )
             }
         }
 
@@ -213,6 +336,28 @@ fun OptionsScreen(
                     title = "清除课表缓存",
                     subtitle = "删除本地课表缓存并重新抓取，不会退出登录",
                     onClick = { showClearCache = true },
+                )
+            }
+        }
+
+        item {
+            OptionSection("备份与恢复") {
+                OptionRow(
+                    icon = Icons.Filled.Backup,
+                    title = "导出备份",
+                    subtitle = "自定义日程与偏好保存为 JSON 文件",
+                    onClick = {
+                        exportLauncher.launch("掌上成理-backup-${LocalDate.now()}.json")
+                    },
+                )
+                OptionDivider()
+                OptionRow(
+                    icon = Icons.Filled.Restore,
+                    title = "从备份恢复",
+                    subtitle = "选择 JSON 文件，覆盖当前日程与偏好",
+                    onClick = {
+                        importLauncher.launch(arrayOf("application/json", "text/plain"))
+                    },
                 )
             }
         }
@@ -312,6 +457,47 @@ fun OptionsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showLogout = false }) { Text("取消") }
+            },
+        )
+    }
+
+    if (showRestoreConfirm) {
+        AlertDialog(
+            onDismissRequest = {
+                showRestoreConfirm = false
+                pendingRestore = null
+            },
+            title = { Text("从备份恢复") },
+            text = {
+                Text("将用备份覆盖当前自定义日程与偏好；登录状态、课表缓存与账号密码不受影响。")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val raw = pendingRestore
+                    showRestoreConfirm = false
+                    pendingRestore = null
+                    if (raw != null) {
+                        scope.launch {
+                            val result = repo.importBackupJson(raw)
+                            if (result.isSuccess) {
+                                termStart = repo.currentTermStartMonday()
+                                Toast.makeText(context, "备份已恢复", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "恢复失败：${result.exceptionOrNull()?.message.orEmpty()}",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                    }
+                }) { Text("恢复", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showRestoreConfirm = false
+                    pendingRestore = null
+                }) { Text("取消") }
             },
         )
     }
@@ -427,6 +613,47 @@ private fun OptionSwitchRow(
             )
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+@Composable
+private fun OptionSliderRow(
+    icon: ImageVector,
+    title: String,
+    valueText: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    valueText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            onValueChangeFinished = onValueChangeFinished,
+        )
     }
 }
 

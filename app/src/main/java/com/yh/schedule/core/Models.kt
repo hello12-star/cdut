@@ -146,3 +146,40 @@ object SchoolCalendar {
     fun coursesOfDay(all: List<Course>, date: LocalDate, week: Int): List<Course> =
         all.filter { it.dayOfWeek == date.dayOfWeek.value && courseInWeek(it, week) }
 }
+
+/** 备份文件根对象；version 用于后续迁移，当前只接受 1。 */
+@Serializable
+data class BackupPayload(
+    val version: Int = 1,
+    val events: List<BackupEvent> = emptyList(),
+    val prefs: BackupPrefs = BackupPrefs(),
+)
+
+/** 备份里的单条自定义日程（字段与 CustomEventEntity 对齐，日期用 ISO 字符串） */
+@Serializable
+data class BackupEvent(
+    val title: String,
+    val date: String,
+    val endDate: String = "",
+    val startTime: String = "08:00",
+    val endTime: String = "09:00",
+    val note: String = "",
+    /** SCHEDULE / DEADLINE */
+    val type: String = "SCHEDULE",
+    val remark: String = "",
+)
+
+/** 备份里的偏好；不包含账号、密码、Cookie 与课表缓存 */
+@Serializable
+data class BackupPrefs(
+    val themeMode: String = "system",
+    val showWeekend: Boolean = false,
+    val showOverdue: Boolean = false,
+    val webViewDark: Boolean = false,
+    val queryOrder: String = "",
+    val courseAlpha: Float = 1f,
+    val courseTextScale: Float = 1f,
+    val courseLineScale: Float = 1f,
+    val infiniteWheel: Boolean = true,
+    val termStartMonday: String? = null,
+)

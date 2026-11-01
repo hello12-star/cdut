@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yh.schedule.core.SchoolCalendar
@@ -162,6 +163,12 @@ fun TimetableAxis(
     rulerWidth: Dp = 42.dp,
     /** 显示几天：5 = 只下周一到周五（周末无内容时，列更宽）；7 = 完整整周 */
     dayCount: Int = 7,
+    /** 课程块背景透明度：1f 不透明，越小越透 */
+    courseAlpha: Float = 1f,
+    /** 课程块文字缩放：1f 默认 */
+    courseTextScale: Float = 1f,
+    /** 课程块文字行距缩放：1f 默认 */
+    courseLineScale: Float = 1f,
     onItemClick: (TimeTableItem) -> Unit = {},
     onBlankDoubleTap: (dayOfWeek: Int, hour: Float) -> Unit = { _, _ -> },
     onWeekTitleClick: (() -> Unit)? = null,
@@ -333,7 +340,7 @@ fun TimetableAxis(
                                 .width(innerW)
                                 .height(with(density) { blockH.toDp() })
                                 .clip(RoundedCornerShape(6.dp))
-                                .background(bg)
+                                .background(bg.copy(alpha = courseAlpha.coerceIn(0.3f, 1f)))
                                 .clickable { onItemClick(p.item) }
                                 .padding(horizontal = 2.dp),
                         ) {
@@ -347,12 +354,20 @@ fun TimetableAxis(
                                 val showText = innerW >= 16.dp
                                 val narrow = innerW < 30.dp
                                 val wide = dayCount <= 5   // 5 天模式列更宽，字号跟着放大
-                                val timeSize = if (narrow) 7.5.sp else if (wide) 10.5.sp else 9.5.sp
-                                val nameSize = if (narrow) 8.sp else if (wide) 12.5.sp else 11.sp
-                                val nameLine = if (narrow) 9.sp else if (wide) 14.sp else 12.sp
+                                val baseTimeSize = if (narrow) 7.5.sp else if (wide) 10.5.sp else 9.5.sp
+                                val baseNameSize = if (narrow) 8.sp else if (wide) 12.5.sp else 11.sp
+                                val baseNameLine = if (narrow) 9.sp else if (wide) 14.sp else 12.sp
                                 val nameMax = if (narrow) 3 else 4
-                                val placeSize = if (narrow) 7.5.sp else if (wide) 11.sp else 10.sp
-                                val placeLine = if (narrow) 8.5.sp else if (wide) 12.sp else 11.sp
+                                val basePlaceSize = if (narrow) 7.5.sp else if (wide) 11.sp else 10.sp
+                                val basePlaceLine = if (narrow) 8.5.sp else if (wide) 12.sp else 11.sp
+
+                                val textScale = courseTextScale.coerceIn(0.75f, 1.35f)
+                                val lineScale = courseLineScale.coerceIn(0.85f, 1.6f)
+                                val timeSize = baseTimeSize.scaled(textScale)
+                                val nameSize = baseNameSize.scaled(textScale)
+                                val nameLine = baseNameLine.scaled(textScale * lineScale)
+                                val placeSize = basePlaceSize.scaled(textScale)
+                                val placeLine = basePlaceLine.scaled(textScale * lineScale)
 
                                 if (showText) {
                                     // 开始时间：固定贴顶
@@ -443,6 +458,9 @@ private fun simplifyPlace(place: String): String {
         .trim()
     return s.ifBlank { place }
 }
+
+/** TextUnit 按倍率缩放（sp 值不变，只改数值） */
+private fun TextUnit.scaled(factor: Float): TextUnit = (value * factor).sp
 
 /** 把小时 + 分钟取整到最近的半小时，便于新建日程默认值 */
 fun Float.toNearestHalfHour(): String {

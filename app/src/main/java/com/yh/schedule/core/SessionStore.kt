@@ -3,6 +3,7 @@ package com.yh.schedule.core
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -57,6 +58,18 @@ class SessionStore(private val context: Context) {
 
         /** 查询中心入口顺序：逗号分隔的入口 id；空串表示默认顺序 */
         private val KEY_QUERY_ORDER = stringPreferencesKey("query_order")
+
+        /** 课表方块透明度（1f = 不透明） */
+        private val KEY_COURSE_ALPHA = floatPreferencesKey("course_block_alpha")
+
+        /** 课表方块文字缩放（1f = 默认） */
+        private val KEY_COURSE_TEXT_SCALE = floatPreferencesKey("course_text_scale")
+
+        /** 课表方块文字行距缩放（1f = 默认） */
+        private val KEY_COURSE_LINE_SCALE = floatPreferencesKey("course_line_scale")
+
+        /** 时间选择器是否无限循环滚动 */
+        private val KEY_INFINITE_WHEEL = booleanPreferencesKey("infinite_wheel")
     }
 
     val demoMode: Flow<Boolean> = context.dataStore.data.map { it[KEY_DEMO_MODE] ?: true }
@@ -80,6 +93,22 @@ class SessionStore(private val context: Context) {
     /** 查询中心入口顺序；空串表示默认顺序 */
     val queryOrder: Flow<String> = context.dataStore.data.map { it[KEY_QUERY_ORDER] ?: "" }
 
+    /** 课表方块透明度（1f = 不透明） */
+    val courseAlpha: Flow<Float> =
+        context.dataStore.data.map { it[KEY_COURSE_ALPHA] ?: 1f }
+
+    /** 课表方块文字缩放（1f = 默认） */
+    val courseTextScale: Flow<Float> =
+        context.dataStore.data.map { it[KEY_COURSE_TEXT_SCALE] ?: 1f }
+
+    /** 课表方块文字行距缩放（1f = 默认） */
+    val courseLineScale: Flow<Float> =
+        context.dataStore.data.map { it[KEY_COURSE_LINE_SCALE] ?: 1f }
+
+    /** 时间选择器是否无限循环滚动 */
+    val infiniteWheel: Flow<Boolean> =
+        context.dataStore.data.map { it[KEY_INFINITE_WHEEL] ?: true }
+
     suspend fun setThemeMode(mode: String) {
         context.dataStore.edit { it[KEY_THEME_MODE] = mode }
     }
@@ -98,6 +127,22 @@ class SessionStore(private val context: Context) {
 
     suspend fun setQueryOrder(order: String) {
         context.dataStore.edit { it[KEY_QUERY_ORDER] = order }
+    }
+
+    suspend fun setCourseAlpha(value: Float) {
+        context.dataStore.edit { it[KEY_COURSE_ALPHA] = value.coerceIn(0.3f, 1f) }
+    }
+
+    suspend fun setCourseTextScale(value: Float) {
+        context.dataStore.edit { it[KEY_COURSE_TEXT_SCALE] = value.coerceIn(0.75f, 1.35f) }
+    }
+
+    suspend fun setCourseLineScale(value: Float) {
+        context.dataStore.edit { it[KEY_COURSE_LINE_SCALE] = value.coerceIn(0.85f, 1.6f) }
+    }
+
+    suspend fun setInfiniteWheel(on: Boolean) {
+        context.dataStore.edit { it[KEY_INFINITE_WHEEL] = on }
     }
 
     suspend fun setDemoMode(on: Boolean) {

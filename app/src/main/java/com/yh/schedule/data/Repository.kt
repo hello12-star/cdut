@@ -1,7 +1,11 @@
 package com.yh.schedule.data
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.yh.schedule.CdutApp
+import com.yh.schedule.core.BackupEvent
+import com.yh.schedule.core.BackupPayload
+import com.yh.schedule.core.BackupPrefs
 import com.yh.schedule.core.Course
 import com.yh.schedule.core.Exam
 import com.yh.schedule.core.GradeItem
@@ -54,6 +58,18 @@ class Repository(
     /** 查询中心入口顺序（逗号分隔的 id） */
     val queryOrder: Flow<String> = store.queryOrder
 
+    /** 课表方块透明度（1f = 不透明） */
+    val courseAlpha: Flow<Float> = store.courseAlpha
+
+    /** 课表方块文字缩放（1f = 默认） */
+    val courseTextScale: Flow<Float> = store.courseTextScale
+
+    /** 课表方块文字行距缩放（1f = 默认） */
+    val courseLineScale: Flow<Float> = store.courseLineScale
+
+    /** 时间选择器是否无限循环滚动 */
+    val infiniteWheel: Flow<Boolean> = store.infiniteWheel
+
     suspend fun setThemeMode(mode: String) = store.setThemeMode(mode)
 
     suspend fun setShowWeekendDefault(on: Boolean) = store.setShowWeekendDefault(on)
@@ -63,6 +79,14 @@ class Repository(
     suspend fun setWebViewDark(on: Boolean) = store.setWebViewDark(on)
 
     suspend fun setQueryOrder(order: String) = store.setQueryOrder(order)
+
+    suspend fun setCourseAlpha(value: Float) = store.setCourseAlpha(value)
+
+    suspend fun setCourseTextScale(value: Float) = store.setCourseTextScale(value)
+
+    suspend fun setCourseLineScale(value: Float) = store.setCourseLineScale(value)
+
+    suspend fun setInfiniteWheel(on: Boolean) = store.setInfiniteWheel(on)
 
     /** 登录：demo=true 直接进入演示模式；真实模式走 WebView 统一认证（见 CasLoginScreen） */
     suspend fun login(account: String, password: String, demo: Boolean): Result<Unit> {
@@ -252,6 +276,87 @@ class Repository(
     suspend fun clearTimetableCache() {
         store.clearTimetable()
         resetScrapeGuard()
+    }
+
+    /**
+     * 导出备份：自定义日程 + 偏好，JSON 字符串。
+     * 不导出账号、密码、Cookie、课表缓存。
+     */
+    suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
+        val events = eventDao.all().first().map { e ->
+            BackupEvent(
+                title = e.title,
+                date = e.date,
+                endDate = e.endDate,
+                startTime = e.startTime,
+                endTime = e.endTime,
+                note = e.note,
+                type = e.type,
+                remark = e.remark,
+            )
+        }
+        val prefs = BackupPrefs(
+            themeMode = store.themeMode.first(),
+            showWeekend = store.showWeekendDefault.first(),
+            showOverdue = store.showOverdueDefault.first(),
+            webViewDark = store.webViewDark.first(),
+            queryOrder = store.queryOrder.first(),
+            courseAlpha = store.courseAlpha.first(),
+            courseTextScale = store.courseTextScale.first(),
+            courseLineScale = store.courseLineScale.first(),
+            infiniteWheel = store.infiniteWheel.first(),
+            termStartMonday = store.termStartMonday(),
+        )
+        json.encodeToString(BackupPayload(events = events, prefs = prefs))
+    }
+
+    /**
+     * 从备份恢复：覆盖自定义日程与偏好。
+     * 先校验并构造全部实体，再在事务里替换，避免恢复失败留下半套数据。
+     */
+    suspend fun importBackupJson(raw: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = json.decodeFromString<BackupPayload>(raw)
+            require(payload.version == 1) { "不支持的备份版本：${payload.version}" }
+
+            val entities = payload.events.map { e ->
+                val start = LocalDate.parse(e.date)
+                val end = if (e.endDate.isBlank()) start else LocalDate.parse(e.endDate)
+                CustomEventEntity(
+                    title = e.title,
+                    date = start.toString(),
+                    endDate = end.toString(),
+                    startTime = e.startTime,
+                    endTime = e.endTime,
+                    note = e.note,
+                    type = if (e.type == "DEADLINE") "DEADLINE" else "SCHEDULE",
+                    remark = e.remark,
+                )
+            }
+
+            db.withTransaction {
+                eventDao.clearAll()
+                entities.forEach { eventDao.insert(it) }
+            }
+
+            val p = payload.prefs
+            store.setThemeMode(p.themeMode)
+            store.setShowWeekendDefault(p.showWeekend)
+            store.setShowOverdueDefault(p.showOverdue)
+            store.setWebViewDark(p.webViewDark)
+            store.setQueryOrder(p.queryOrder)
+            store.setCourseAlpha(p.courseAlpha)
+            store.setCourseTextScale(p.courseTextScale)
+            store.setCourseLineScale(p.courseLineScale)
+            store.setInfiniteWheel(p.infiniteWheel)
+            p.termStartMonday?.let { iso ->
+                runCatching { LocalDate.parse(iso) }.getOrNull()?.let { d ->
+                    store.saveTermStartMonday(d.toString())
+                    SchoolCalendar.termStartMonday = d
+                }
+            }
+            Unit
+        }
     }
 
     /**

@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -81,6 +82,9 @@ fun TimetableScreen(
     var showWeekend by remember { mutableStateOf(false) }
     // 选项页的偏好：开启后无论本周有没有周末课都按 7 天显示
     var preferWeekend by remember { mutableStateOf(false) }
+    val courseAlpha by repo.courseAlpha.collectAsState(initial = 1f)
+    val courseTextScale by repo.courseTextScale.collectAsState(initial = 1f)
+    val courseLineScale by repo.courseLineScale.collectAsState(initial = 1f)
     var demo by remember { mutableStateOf(true) }
     // 是否存在真实课表缓存：用于区分「抓取还没成功」和「这周确实没排课」
     var hasCache by remember { mutableStateOf(false) }
@@ -185,6 +189,9 @@ fun TimetableScreen(
                 today = LocalDate.now(),
                 modifier = Modifier.fillMaxSize(),
                 dayCount = if (showWeekend) 7 else 5,
+                courseAlpha = courseAlpha,
+                courseTextScale = courseTextScale,
+                courseLineScale = courseLineScale,
                 onItemClick = { item ->
                     val eid = item.eventId
                     when {

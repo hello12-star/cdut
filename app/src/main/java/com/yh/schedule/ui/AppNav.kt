@@ -196,6 +196,7 @@ private fun MainScaffold(
     )
     var selected by remember { mutableIntStateOf(0) }
     val demo by repo.demoMode.collectAsState(initial = true)
+    val infiniteWheel by repo.infiniteWheel.collectAsState(initial = true)
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     // 课表页只读缓存，刚登录时缓存是空的。此时自动停在「聚焦」页，
@@ -296,6 +297,7 @@ private fun MainScaffold(
                     initialDate = target.date,
                     initialStart = target.start,
                     initialEnd = target.end,
+                    enableInfiniteWheel = infiniteWheel,
                     onDismiss = { overlay = null },
                     onSave = { event ->
                         scope.launch {
@@ -310,6 +312,7 @@ private fun MainScaffold(
                     initialStart = target.event.startTime,
                     initialEnd = target.event.endTime,
                     editing = target.event,
+                    enableInfiniteWheel = infiniteWheel,
                     onDismiss = { overlay = null },
                     onDelete = {
                         scope.launch {

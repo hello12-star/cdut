@@ -108,6 +108,8 @@ fun AddEventScreen(
     onDismiss: () -> Unit,
     onDelete: (() -> Unit)? = null,
     onSave: (CustomEvent) -> Unit,
+    /** 时间滚轮是否无限循环（选项页偏好） */
+    enableInfiniteWheel: Boolean = true,
     /** 由调用方传入共享元素修饰符（sharedBounds），实现 FAB → 整页的容器转换动画 */
     modifier: Modifier = Modifier,
 ) {
@@ -123,6 +125,7 @@ fun AddEventScreen(
             onDismiss = onDismiss,
             onDelete = onDelete,
             onSave = onSave,
+            enableInfiniteWheel = enableInfiniteWheel,
         )
     }
 }
@@ -137,6 +140,7 @@ private fun AddEventContent(
     onDismiss: () -> Unit,
     onDelete: (() -> Unit)?,
     onSave: (CustomEvent) -> Unit,
+    enableInfiniteWheel: Boolean,
 ) {
     var isScheduleType by remember { mutableStateOf(editing?.type != EventType.DEADLINE) }
     var title by remember { mutableStateOf(editing?.title ?: "") }
@@ -512,6 +516,7 @@ private fun AddEventContent(
         YhTimeRangePickerDialog(
             isSchedule = isScheduleType,
             defaultValue = startTime to endTime,
+            enableInfiniteScroll = enableInfiniteWheel,
             onSelected = { (s, e) ->
                 startTime = s
                 endTime = e
