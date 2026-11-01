@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,15 +78,23 @@ fun WebContainerScreen(
         Row(
             Modifier
                 .fillMaxWidth()
+                // 显式铺底色 + 显式文字/图标颜色：网页加载失败时 WebView 会铺满白底，
+                // 之前依赖 LocalContentColor 出现过「返回按钮看不见」的情况
+                .background(MaterialTheme.colorScheme.background)
                 .padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "返回",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                )
             }
             Text(
                 title,
                 style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -96,7 +105,13 @@ fun WebContainerScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        Box(Modifier.fillMaxSize()) {
+        // clipToBounds：网页加载失败时 WebView 会画一块全屏白底，连顶部返回栏都被盖住。
+        // 把内容区裁死在自己的范围里，顶栏才能始终可见。
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clipToBounds(),
+        ) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->

@@ -327,7 +327,10 @@ private fun MainScaffold(
         Tab("查询中心", Icons.Filled.Category),
         Tab("选项", Icons.Filled.Settings),
     )
-    var selected by remember { mutableIntStateOf(0) }
+    // 必须用 rememberSaveable：查询/网页详情是独立导航页，打开时 MainScaffold
+    // 会离开组合；回到 main 时若用 remember，tab 会重置成 0（课程表），
+    // 表现就是「从成绩查询返回却跳到了课表」。
+    var selected by rememberSaveable { mutableIntStateOf(0) }
     val demo by repo.demoMode.collectAsState(initial = true)
     val infiniteWheel by repo.infiniteWheel.collectAsState(initial = true)
     val scope = androidx.compose.runtime.rememberCoroutineScope()

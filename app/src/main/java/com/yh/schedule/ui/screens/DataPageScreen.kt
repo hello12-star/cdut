@@ -34,12 +34,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,41 +81,46 @@ fun DataPageScreen(
     onBack: () -> Unit,
     onOpenRaw: (String, String) -> Unit,
 ) {
-    var content by remember { mutableStateOf<DataContent?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(true) }
+    // 用 rememberSaveable 保存抓取结果：从「原始网页」返回本页时能直接恢复内容，
+    // 不会又转一圈进度条重新抓取
+    var contentJson by rememberSaveable { mutableStateOf<String?>(null) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
     var tick by remember { mutableIntStateOf(0) }
     var tail by remember { mutableStateOf("") }
 
-    // 强智页面经常先出「正在加载」遮罩，再异步填表；抓取失败时重来一轮
-    LaunchedEffect(tick, url) {
-        content = null
+    val content = remember(contentJson) {
+        contentJson?.let { runCatching { parseContent(it) }.getOrNull() }
+    }
+    val loading = contentJson == null && error == null
+
+    fun retry() {
+        contentJson = null
         error = null
-        loading = true
+        tick++
     }
 
-    key(tick) {
-        DataScraper(
-            url = url,
-            kind = kind,
-            onJson = { raw ->
-                val parsed = runCatching { parseContent(raw) }.getOrNull()
-                if (parsed == null ||
-                    (parsed.tables.isEmpty() && parsed.text.isBlank() && !parsed.empty)
-                ) {
-                    // 空页：多数是还在渲染，继续等下一轮
-                } else {
-                    content = parsed
-                    loading = false
-                }
-            },
-            onTail = { tail = it },
-            onFail = { msg ->
-                // WebView 内部已重试过；这里只负责展示原因
-                error = msg
-                loading = false
-            },
-        )
+    if (loading) {
+        key(tick) {
+            DataScraper(
+                url = url,
+                kind = kind,
+                onJson = { raw ->
+                    val parsed = runCatching { parseContent(raw) }.getOrNull()
+                    if (parsed == null ||
+                        (parsed.tables.isEmpty() && parsed.text.isBlank() && !parsed.empty)
+                    ) {
+                        // 空页：多数是还在渲染，继续等下一轮
+                    } else {
+                        contentJson = raw
+                    }
+                },
+                onTail = { tail = it },
+                onFail = { msg ->
+                    // WebView 内部已重试过；这里只负责展示原因
+                    error = msg
+                },
+            )
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -138,7 +143,7 @@ fun DataPageScreen(
             IconButton(onClick = { onOpenRaw(url, title) }) {
                 Icon(Icons.Filled.OpenInBrowser, contentDescription = "打开原始网页")
             }
-            IconButton(onClick = { tick++ }) {
+            IconButton(onClick = { retry() }) {
                 Icon(Icons.Filled.Refresh, contentDescription = "重新读取")
             }
         }
@@ -176,7 +181,7 @@ fun DataPageScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(12.dp))
-                    TextButton(onClick = { tick++ }) { Text("重试") }
+                    TextButton(onClick = { retry() }) { Text("重试") }
                 }
             }
             content != null -> DataContentList(content!!, kind)
