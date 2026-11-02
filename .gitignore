@@ -37,3 +37,10 @@ check_sdk.py
 extract_err.py
 build_log.txt
 wrapper_err.log
+
+# ---- 内部分析 / 交接 / 规划文档（不入库）----
+HANDOVER*.md
+docs/
+
+# ---- 对外分发包（这是唯一允许入库的 apk）----
+!dist/掌上成理-debug.apk

@@ -1,22 +1,36 @@
-# 掌上成理（YHSchedule）
+# 掌上成理
 
-成都理工大学校园日程助手 —— MVP。功能语义参照"聚在工大"（HFUT-Schedule）的功能级逆向分析成果重新设计，接口契约全部换为成都理工大学生态。
+成都理工大学校园课表与日程助手（Android · Kotlin · Jetpack Compose）。
 
-> 逆向分析交付物见 `D:\workbuddy_workplace\jzgdx_re\deliverables\`
-> （recon_report / feature_specs / gap_analysis / implementation_plan）。
+**当前版本：0.1.8（debug）** ｜ 最低系统：Android 8.0（API 26） ｜ 包名：`com.yh.schedule`
 
-## 功能（MVP）
+**下载安装包：[掌上成理-debug.apk](dist/掌上成理-debug.apk)**
 
-| 模块 | 状态 | 数据源 |
-|---|---|---|
-| 登录 | ✅ 统一认证 WebView 登录（密码不经过本应用）；演示模式可用 | CAS `cas.paas.cdut.edu.cn`（瑞数防护下唯一合法路径） |
-| 课程表（周视图/考试条/周切换） | ✅ 演示数据；真实接口路径待校准 | 强智 jsxsd 适配器 |
-| 聚焦页（重要安排/明日课程/自定义事项） | ✅ 本地 Room 持久化 | 本地 |
-| 成绩（统计卡 + 学期分组） | ✅ 演示数据 | 强智 jsxsd 适配器 |
-| 服务容器（砚湖易办/教务/后勤/缴费/图书馆/邮箱） | ✅ WebView 容器 | 官方页面 |
+> 个人自用工具，不上架应用商店。密码经 Android Keystore 加密后保存，
+> 教务登录全部在官方 WebView 页面完成。
 
-**演示模式**：登录页点"演示模式进入"，内置宜宾校区楼栋命名（甲/乙/丙楼）的示例数据，不影响任何真实账号。
-**真实模式**：点"统一身份认证登录"进入 WebView 完成登录，成功后提取 CAS 会话 Cookie 复用。
+## 功能
+
+| 模块 | 说明 |
+|---|---|
+| 登录 | 统一身份认证 WebView（账号密码不经过本应用）；另有演示模式 |
+| 课表 | 强智教务真实数据抓取、原生时间轴、周切换、课程详情、本地缓存 |
+| 聚焦页 | 今日 / 明日课程、自定义日程（Room）、已过期事项 |
+| 查询中心 | 17 个入口；12 个教务入口原生卡片化，5 个外部服务仍为网页容器；支持搜索与长按拖拽排序 |
+| 网络接入 | 校园网 WiFi 自动直连；蜂窝 / 校外 WiFi 自动 WebVPN；切换网络会静默重登 |
+| 外观 | 深色模式、网页强制深色、课表块透明度 / 字号 / 行距 |
+| 设置 | 学期起始日、清除课表缓存、JSON 备份 / 恢复、无限滚轮、预测性返回 |
+| 自动刷新登录 | 可选；冷启动用已保存账密在后台登录一次 CAS（默认关闭） |
+
+## 下载与安装
+
+1. 下载 [`dist/掌上成理-debug.apk`](dist/掌上成理-debug.apk)。
+2. 手机允许「安装未知来源应用」后安装。
+3. 打开 App → 统一身份认证登录（学号 + 密码）。
+   校外或使用流量时会自动走 WebVPN，无需安装任何 VPN 客户端。
+
+> 演示模式：登录页点「演示模式进入」，内置宜宾校区楼栋命名（甲 / 乙 / 丙楼）的示例数据，
+> 不影响任何真实账号。
 
 > **2026-10-18 联调结论（重要）**
 >
@@ -40,8 +54,7 @@
 > | 缓考申请 | `https://jw.cdut.edu.cn/jsxsd/kscj/hksq_query` |
 > | 消息通知 / 已收公告 | `/jsxsd/ggly/xxtz_query`、`/jsxsd/ggly/ysgg_query` |
 >
-> 已验证：**课表页渲染出真实课程数据**（第 9 周：大学体育(1)、劳动教育(理论) (宜)甲A104），成绩页正常（新生暂无数据）。
-> 协议细节留档于 `recon/`（cas_probe.py / cas_login_rsa.py / RsaEncrypt.java / cdp_*.js），均不含凭据。
+> 已验证：**课表页渲染出真实课程数据**，成绩页、考试页、选课结果等均能正常抓取。
 
 ## 课表真实数据链路（2026-10-18 打通）
 
@@ -59,7 +72,7 @@
 | # | 约束 | 后果 |
 |---|---|---|
 | 1 | 所有 WebView 使用**同一 UA**（本项目统一不设置，用系统默认） | PC UA 下 CAS 手机版登录页白屏；UA 不一致时瑞数判定为两个客户端，接口返回 `{"flag1":2}` 未登录 |
-| 2 | 登录从 `https://jw.cdut.edu.cn/jsxsd/` 进入，**不要手拼 CAS URL** | 手拼会漏掉 `targetUrl=base64...`，SSO 断在 sso/login.jsp，jw 会话建不起来 |
+| 2 | 直连模式从 `https://jw.cdut.edu.cn/jsxsd/` 进入（VPN 模式走 `vpn.cdut.edu.cn/public/cas_login`），**不要手拼教务 CAS URL** | 手拼会漏掉 `targetUrl=base64...`，SSO 断在 sso/login.jsp，jw 会话建不起来 |
 | 3 | 登录成功判定必须等 SSO 全链路（sso/login → Logon.do → LoginToXk） | 过早销毁登录 WebView 会丢失会话 |
 | 4 | 抓取 WebView 不可 0dp | 零尺寸会跳过渲染，DOM 不生成 |
 | 5 | 切换周次要留意课表周次空档 | 测试账号周次为 2-5、9-19，第 6 周本身无课 |
@@ -121,16 +134,6 @@ VPN 登录入口：`https://vpn.cdut.edu.cn/public/cas_login?entry_id=2`；
 空教室、补考报名、已收公告。「我的课表」直接跳到 App 自己的课表页；
 图书馆、砚湖易办、后勤、缴费、邮箱仍是网页容器。
 
-## 功能清单（MVP 已完成）
-
-- [x] 统一认证登录（WebView，密码不进 App）
-- [x] 退出登录 / 切换账号（清登录态与全部 Cookie，无需清应用数据）
-- [x] 课表：真实数据抓取 + **时间轴原生渲染** + 本地缓存 + 加载/空/错误三态
-- [x] 聚焦页：日期周次、明日课程、自定义事项（Room）、3 个快捷入口
-- [x] 成绩：统计卡（加权均分/学分/绩点）+ 学期分组
-- [x] 服务：9 个真实入口（课表/成绩/考试/培养方案/选课结果/公告/砚湖易办/智慧后勤/缴费/图书馆/邮箱）
-- [x] 添加日程（标题/开始/结束/描述）+ 保存后立即出现在课表
-
 ## 对照参考源码的重构（2026-10-19）
 
 参考仓库：[`Chiu-xaH/HFUT-Schedule`](https://github.com/Chiu-xaH/HFUT-Schedule)（聚在工大）
@@ -158,50 +161,51 @@ VPN 登录入口：`https://vpn.cdut.edu.cn/public/cas_login?entry_id=2`；
 2. 等待 Gradle Sync（已配置阿里云镜像，国内网络较快）。
 3. 连接手机或启动模拟器 → Run。
 
-命令行构建（已验证可用）：
+命令行构建（需 JDK 17 ~ 21）：
 
 ```bat
-set JAVA_HOME=D:\workbuddy_workplace\cdut-helper\jdk21\jdk-21.0.2
-cd /d D:\workbuddy_workplace\cdut-helper
-gradle-dist\gradle-8.10.2\bin\gradle.bat assembleDebug --no-daemon
+set JAVA_HOME=<JDK 17~21 的安装目录>
+gradlew.bat assembleDebug
 ```
 
-产物：`app\build\outputs\apk\debug\app-debug.apk`（约 17.5 MB，2026-10-18 已构建成功）。
-分发包：`app\build\dist\掌上成理-debug.apk`（`assembleDebug` 后自动复制，文件名用于直接发给同学）。
+产物：`app\build\outputs\apk\debug\app-debug.apk`（约 18.4 MB）。
+分发包：`app\build\dist\掌上成理-debug.apk`（`assembleDebug` 后自动复制）。
+仓库内同时保留一份最新分发包：`dist\掌上成理-debug.apk`，可直接从 GitHub 下载。
 
-- JDK：17 ~ 21（本仓库已附带 JDK 21 于 `jdk21\`；Java 25 会被 Gradle 8.10 拒绝）
-- Android SDK：`local.properties` 已指向 `C:\Users\l'l\AppData\Local\Android\Sdk`；首次构建时 AGP 自动补装了 platform 35
+> 注意：Java 25 会被当前 Gradle / Kotlin 版本拒绝，构建前请把 `JAVA_HOME` 指向 JDK 21。
 
-## 待联调校准清单（拿到账号/接口确认后）
+## 已知限制
 
-| 项 | 位置 | 说明 |
-|---|---|---|
-| CAS 表单字段 | `core/CasClient.kt` | Apereo CAS 6 可能无 `lt` 字段；错误判定文案需按实际页面校准 |
-| CAS 各子系统 service 参数 | `core/CasClient.kt` | 需向信息中心确认注册名，避免风控 |
-| 强智登录路径 | `core/QzClient.kt#QzPaths` | 经典 `/jsxsd/xk/LoginToXk` vs 新版 `/sso/login.jsp`，以实测为准 |
-| 课表/成绩解析列序 | `core/QzClient.kt#parse*` | 强智 HTML 结构随版本有差异 |
-| 学期代码 | `data/Repository.kt` | 现硬编码 `2026-2027-1`，需从教务学期接口动态获取 |
-| 一卡通/电费/校园网 | 聚焦页占位 | 属 Requires New Integration（见 gap_analysis.md） |
+- 图书馆、砚湖易办、智慧后勤、缴费平台、学生邮箱仍是网页容器（属于第三方 / 交易页面，未做原生化）。
+- 「成绩统计」是本地汇总页；真实成绩明细在查询中心的「成绩查询」原生页。
+- 校外依赖浏览器版 WebVPN（`vpn.cdut.edu.cn`），无需安装 VPN 客户端。
+- debug 签名，仅个人分发；换账号 / 真机复验仍待补测。
 
 ## 结构
 
 ```
 app/src/main/java/com/yh/schedule/
-├─ CdutApp.kt              Application（全局 OkHttp）
+├─ CdutApp.kt              Application
 ├─ MainActivity.kt
 ├─ core/
-│  ├─ Models.kt            课程/考试/成绩模型 + 学期周次计算
-│  ├─ SessionStore.kt      DataStore 登录态（正式版需接 Keystore 加密）
-│  ├─ CasClient.kt         成理 CAS 客户端（真实模式骨架）
-│  └─ QzClient.kt          强智 jsxsd 适配器（课表/成绩 HTML 解析）
+│  ├─ Models.kt            课程/考试/日程模型 + 学期周次
+│  ├─ SessionStore.kt      DataStore 登录态与偏好（密码 Keystore 加密）
+│  ├─ NetworkAccess.kt     直连 / WebVPN 自动判定
+│  ├─ WebConst.kt          链路常量与代理地址改写
+│  ├─ QzClient.kt          强智 jsxsd 适配
+│  └─ QzJsTimetableParser.kt  课表页 JS 结果解析
 ├─ data/
 │  ├─ AppDb.kt             Room：自定义事项 / 考试记录
-│  ├─ MockData.kt          演示数据（宜宾校区命名）
-│  └─ Repository.kt        Mock / 真实双模式路由
+│  └─ Repository.kt        数据与偏好入口
 └─ ui/
    ├─ theme/Theme.kt       Material3（成理蓝）
-   ├─ AppNav.kt            登录门控 + 底部四 Tab + WebView 路由
-   └─ screens/             Login / Timetable / Focus / Grade / Services / WebContainer
+   ├─ AppNav.kt            登录门控 + 四 Tab + 网页/数据路由
+   └─ screens/
+      ├─ CasLoginScreen.kt     统一认证登录 + 冷启动自动刷新
+      ├─ TimetableScreen.kt    课表 + 隐藏 WebView 抓取
+      ├─ DataPageScreen.kt     查询中心教务页原生展示
+      ├─ WebContainerScreen.kt 外部服务网页容器
+      └─ ...                   聚焦 / 查询中心 / 选项 / 日程编辑
 ```
 
 ## 合规边界
