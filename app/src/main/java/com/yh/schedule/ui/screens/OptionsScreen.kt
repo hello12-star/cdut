@@ -37,12 +37,14 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.SwipeRight
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Web
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
@@ -65,6 +67,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.yh.schedule.core.SchoolCalendar
+import com.yh.schedule.core.UpdateManager
 import com.yh.schedule.core.WebConst
 import com.yh.schedule.data.Repository
 import kotlinx.coroutines.Dispatchers
@@ -107,6 +110,7 @@ fun OptionsScreen(
     val courseLineScale by repo.courseLineScale.collectAsState(initial = 1f)
     val infiniteWheel by repo.infiniteWheel.collectAsState(initial = true)
     val autoRefresh by repo.autoRefreshLogin.collectAsState(initial = false)
+    val updateState by UpdateManager.state.collectAsState()
     // 接入方式是运行期自动判定的：订阅版本号，网络切换后这一行文案跟着更新
     val accessVersion by com.yh.schedule.core.NetworkAccess.version.collectAsState()
     val useVpnNow = remember(accessVersion) { WebConst.USE_VPN }
@@ -192,6 +196,58 @@ fun OptionsScreen(
         }
 
         item {
+            OptionSection("应用更新") {
+                OptionRow(
+                    icon = Icons.Filled.SystemUpdate,
+                    title = "检查更新",
+                    subtitle = updateSubtitle(updateState, versionName),
+                    onClick = { scope.launch { UpdateManager.check(context) } },
+                )
+                when (val s = updateState) {
+                    is UpdateManager.UpdateState.Available -> {
+                        OptionDivider()
+                        UpdateAvailableBlock(
+                            info = s.info,
+                            onDownload = { UpdateManager.download(context, s.info) },
+                            onDismiss = { UpdateManager.dismiss() },
+                        )
+                    }
+
+                    is UpdateManager.UpdateState.Downloading -> {
+                        OptionDivider()
+                        UpdateDownloadingBlock(s)
+                    }
+
+                    is UpdateManager.UpdateState.Downloaded -> {
+                        OptionDivider()
+                        UpdateDownloadedBlock(
+                            info = s.info,
+                            onInstall = { UpdateManager.install(context, s.info) },
+                            onDelete = { UpdateManager.deleteDownloaded(context) },
+                        )
+                    }
+
+                    is UpdateManager.UpdateState.Failed -> {
+                        OptionDivider()
+                        UpdateFailedBlock(
+                            state = s,
+                            onRetry = {
+                                val info = s.info
+                                if (info != null) {
+                                    UpdateManager.download(context, info)
+                                } else {
+                                    scope.launch { UpdateManager.check(context) }
+                                }
+                            },
+                        )
+                    }
+
+                    else -> {}
+                }
+            }
+        }
+
+        item {
             OptionSection("账号与登录") {
                 OptionRow(
                     icon = Icons.Filled.Person,
@@ -211,6 +267,8 @@ fun OptionsScreen(
                         // 先清掉旧会话 Cookie：否则 CAS 会认旧登录态直接跳回去，换不了账号
                         CookieManager.getInstance().removeAllCookies(null)
                         CookieManager.getInstance().flush()
+                        // 顺手检查一次更新；结果会显示在选项页顶部，不打断登录
+                        scope.launch { UpdateManager.check(context) }
                         onRelogin()
                     },
                 )
@@ -329,9 +387,12 @@ fun OptionsScreen(
                 OptionSwitchRow(
                     icon = Icons.Filled.Refresh,
                     title = "自动刷新登录",
-                    subtitle = "冷启动后用已保存账号密码在后台登录一次 CAS；耗时较长，按需开启",
+                    subtitle = "冷启动后先进入主页，再用已保存账号密码在后台登录一次 CAS；失败会在聚焦页提示",
                     checked = autoRefresh,
-                ) { on -> scope.launch { repo.setAutoRefreshLogin(on) } }
+                ) { on ->
+                    scope.launch { repo.setAutoRefreshLogin(on) }
+                    if (!on) repo.setAutoRefreshFailed(false)
+                }
                 OptionDivider()
                 OptionRow(
                     icon = Icons.Filled.CalendarMonth,
@@ -463,6 +524,7 @@ fun OptionsScreen(
                         CookieManager.getInstance().removeAllCookies(null)
                         CookieManager.getInstance().flush()
                         repo.logout()
+                        repo.setAutoRefreshFailed(false)
                     }
                 }) { Text("退出", color = MaterialTheme.colorScheme.error) }
             },
@@ -590,6 +652,105 @@ private fun themeLabel(mode: String): String = when (mode) {
     "light" -> "始终浅色"
     "dark" -> "始终深色"
     else -> "跟随系统"
+}
+
+/** 「检查更新」这一行的副标题：把当前状态压成一句人话 */
+private fun updateSubtitle(state: UpdateManager.UpdateState, versionName: String): String =
+    when (state) {
+        UpdateManager.UpdateState.Checking -> "正在检查更新…"
+        UpdateManager.UpdateState.UpToDate -> "已是最新版本 ${versionName.ifBlank { "未知" }}"
+        is UpdateManager.UpdateState.Available -> "发现新版本 ${state.info.versionName}"
+        is UpdateManager.UpdateState.Downloading -> "正在下载 ${state.progress}%"
+        is UpdateManager.UpdateState.Downloaded -> "新版本 ${state.info.versionName} 已下载，可安装"
+        is UpdateManager.UpdateState.Failed -> state.message
+        UpdateManager.UpdateState.Idle -> "当前版本 ${versionName.ifBlank { "未知" }}；点按检查"
+    }
+
+@Composable
+private fun UpdateAvailableBlock(
+    info: UpdateManager.UpdateInfo,
+    onDownload: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        if (info.changelog.isNotBlank()) {
+            Text(
+                info.changelog,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (info.size > 0) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "安装包 ${UpdateManager.formatSize(info.size)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(onClick = onDismiss) { Text("稍后") }
+            TextButton(onClick = onDownload) { Text("下载并安装") }
+        }
+    }
+}
+
+@Composable
+private fun UpdateDownloadingBlock(state: UpdateManager.UpdateState.Downloading) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text("正在下载 ${state.progress}%", style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(6.dp))
+        LinearProgressIndicator(
+            progress = { state.progress / 100f },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun UpdateDownloadedBlock(
+    info: UpdateManager.UpdateInfo,
+    onInstall: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(
+            "新版本 ${info.versionName} 已下载",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(onClick = onDelete) { Text("删除") }
+            TextButton(onClick = onInstall) { Text("安装") }
+        }
+    }
+}
+
+@Composable
+private fun UpdateFailedBlock(
+    state: UpdateManager.UpdateState.Failed,
+    onRetry: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            state.message,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+        TextButton(onClick = onRetry) { Text("重试") }
+    }
 }
 
 @Composable

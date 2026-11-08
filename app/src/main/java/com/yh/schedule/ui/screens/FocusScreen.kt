@@ -38,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.AlertDialog
@@ -56,6 +57,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -141,6 +143,8 @@ fun FocusScreen(
     onAddEvent: () -> Unit = {},
     /** 点日程条目：由 MainScaffold 打开全屏编辑页 */
     onEditEvent: (CustomEvent) -> Unit = {},
+    /** 后台自动刷新登录失败时，点「重新登录」回到统一认证 */
+    onRelogin: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val pager = rememberPagerState(pageCount = { 2 })
@@ -160,6 +164,7 @@ fun FocusScreen(
     var eduTick by remember { mutableIntStateOf(0) }
     var refreshTick by remember { mutableIntStateOf(0) }
     var lastRefresh by remember { mutableStateOf(nowHhMm()) }
+    val autoRefreshFailed by repo.autoRefreshFailed.collectAsState()
 
     val today = LocalDate.now()
     val tomorrow = today.plusDays(1)
@@ -212,6 +217,8 @@ fun FocusScreen(
                     authError = "抓到页面但解析出 0 门课（可能登录已过期或本学期无课）"
                 } else {
                     authError = null
+                    // 抓取成功说明当前会话可用，之前后台刷新失败的提示已经过期
+                    repo.setAutoRefreshFailed(false)
                     scope.launch {
                         repo.cacheTimetable(parsed, weekOfTerm)
                         refreshTick++
@@ -364,6 +371,46 @@ fun FocusScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (page == 0) {
+                        // 后台自动刷新登录失败：只提示，不阻挡课表阅读；点按钮重新走统一认证。
+                        // 放在检查卡之前，让"需要重新登录"比"正在检查"更先被看到。
+                        if (autoRefreshFailed) {
+                            item {
+                                Card(
+                                    Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    ),
+                                ) {
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Error,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                "后台自动刷新登录失败",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                            Text(
+                                                "请重新登录后再查看课表与教务数据。",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                        TextButton(onClick = onRelogin) { Text("重新登录") }
+                                    }
+                                }
+                            }
+                        }
+
                         // 检查卡：用高度动画展开/收起，避免瞬间插入把下面内容顶得跳一下
                         item {
                             androidx.compose.animation.AnimatedVisibility(

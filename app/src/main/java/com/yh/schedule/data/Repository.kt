@@ -18,6 +18,9 @@ import com.yh.schedule.core.TimeTableItem
 import com.yh.schedule.core.TimeTableType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -72,6 +75,17 @@ class Repository(
 
     /** 冷启动后是否自动刷新一次 CAS 登录 */
     val autoRefreshLogin: Flow<Boolean> = store.autoRefreshLogin
+
+    /**
+     * 后台自动刷新登录是否失败。
+     * 只放内存：失败了让聚焦页提示重新登录；下次冷启动会再试一次，不需要持久化。
+     */
+    private val _autoRefreshFailed = MutableStateFlow(false)
+    val autoRefreshFailed: StateFlow<Boolean> = _autoRefreshFailed.asStateFlow()
+
+    fun setAutoRefreshFailed(failed: Boolean) {
+        _autoRefreshFailed.value = failed
+    }
 
     suspend fun setThemeMode(mode: String) = store.setThemeMode(mode)
 

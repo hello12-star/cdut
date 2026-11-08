@@ -27,6 +27,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
@@ -122,6 +124,7 @@ fun AppRoot(app: CdutApp) {
     // 换账号的清理已移入 Repository.onWebLoginSuccess（按新旧账号比对），
     // 同账号重登保留上次课表，重登后抓取失败也不会让课表页变空。
     fun onLoginDone() {
+        repo.setAutoRefreshFailed(false)
         showCasLogin = false
     }
 
@@ -173,17 +176,31 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
     var autoLoginReason by remember { mutableStateOf<String?>(null) }   // cold / mode
     var autoLoginDone by remember { mutableStateOf(false) }
     var seenAccessVersion by remember { mutableStateOf<Int?>(null) }
+    var mainUiReady by remember { mutableStateOf(false) }
+    var coldRefreshPending by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val creds = repo.savedCredentials()
         autoLoginCreds = creds
         val coldRefresh = repo.autoRefreshLogin.first()
         val lastMode = repo.loginAccessVpn()
+        // D4 只对已有课表缓存的回访用户生效：首次登录/刚清缓存时，聚焦页自己的
+        // 抓取会完成登录，再开一个后台登录 WebView 只会互相抢 Cookie。
+        coldRefreshPending = creds != null && coldRefresh && repo.hasCachedTimetable()
         autoLoginReason = when {
             creds == null -> null
-            coldRefresh -> "cold"
+            coldRefresh -> null   // 等主界面画完再启动，见下面的 mainUiReady
             lastMode != null && lastMode != com.yh.schedule.core.WebConst.USE_VPN -> "mode"
             else -> null
+        }
+    }
+
+    // 冷启动自动刷新必须让位给首屏：WebView 初始化会抢主线程，太早启动会把
+    // 课表块推迟几秒。MainScaffold 画完第一帧并留出 4 秒后再开始后台刷新。
+    LaunchedEffect(mainUiReady, coldRefreshPending) {
+        if (mainUiReady && coldRefreshPending && !autoLoginDone) {
+            coldRefreshPending = false
+            autoLoginReason = "cold"
         }
     }
 
@@ -222,6 +239,7 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
                     )
                 },
                 onRelogin = { showRelogin = true },
+                onUiReady = { mainUiReady = true },
             ) }
             composable(
                 route = "web?url={url}&title={title}",
@@ -279,6 +297,7 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
             ) { ok ->
                 autoLoginDone = true
                 autoLoginReason = null
+                repo.setAutoRefreshFailed(!ok)
                 if (ok) scope.launch { repo.markLoginAccessMode() }
                 val modeLabel = if (com.yh.schedule.core.WebConst.USE_VPN) {
                     "校外 VPN"
@@ -289,7 +308,7 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
                     ok && reloginReason == "mode" -> "已切换到$modeLabel，登录已刷新"
                     ok -> "自动刷新登录成功"
                     reloginReason == "mode" -> "已切换到$modeLabel，请重新登录"
-                    else -> "自动刷新登录失败，可在选项页手动刷新"
+                    else -> "自动刷新登录失败，请重新登录"
                 }
                 android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_SHORT).show()
             }
@@ -305,6 +324,7 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
                     repo = repo,
                     onSuccess = {
                         // 与 AppRoot 一致：不清课表缓存，保留策略见 Repository.onWebLoginSuccess
+                        repo.setAutoRefreshFailed(false)
                         showRelogin = false
                     },
                     onBack = { showRelogin = false },
@@ -320,6 +340,7 @@ private fun MainScaffold(
     openWeb: (String, String) -> Unit,
     openData: (String, String, String) -> Unit,
     onRelogin: () -> Unit = {},
+    onUiReady: () -> Unit = {},
 ) {
     val tabs = listOf(
         Tab("课程表", Icons.Filled.CalendarMonth),
@@ -347,6 +368,14 @@ private fun MainScaffold(
             bootRedirectDone = true
             if (!repo.hasCachedTimetable()) selected = 1
         }
+    }
+
+    // 首屏优先：先画完第一帧，再留 4 秒给课表缓存加载，之后才允许冷启动自动刷新登录。
+    // 自动登录 WebView 的初始化很重，和首屏抢主线程会让课表块晚几秒才出现。
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        delay(4000)
+        onUiReady()
     }
 
     // 全屏覆盖层的内容（null = 关闭）。作为 AnimatedContent 的 targetState，
@@ -390,6 +419,7 @@ private fun MainScaffold(
                             overlay = Overlay.Add(java.time.LocalDate.now(), "08:10", "09:45")
                         },
                         onEditEvent = { overlay = Overlay.Edit(it) },
+                        onRelogin = onRelogin,
                     )
                     2 -> QueryCenterScreen(
                         repo = repo,

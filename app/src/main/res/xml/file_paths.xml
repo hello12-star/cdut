@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 只暴露应用私有的 Download 目录，避免像合工大那样把整个外部存储交给 FileProvider -->
+<paths>
+    <external-files-path name="downloads" path="Download/" />
+    <files-path name="internal_downloads" path="." />
+</paths>

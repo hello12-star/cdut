@@ -1,0 +1,9 @@
+{
+    "versionCode":  9,
+    "versionName":  "0.1.9",
+    "apkUrl":  "https://gitee.com/hellogitee-star/cdut/releases/download/Android/cdut-helper-debug.apk",
+    "sha256":  "f7328e6545d3b881ec3a17d6aa53c8a694b94c335e015f101e2ee80e93810781",
+    "size":  18895674,
+    "changelog":  "自动刷新登录改为先进入主页、后台刷新，失败在聚焦页提示；新增应用内检查更新（Gitee/GitHub 清单、SHA256 校验、系统安装器）。",
+    "publishedAt":  "2026-11-08"
+}
