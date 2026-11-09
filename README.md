@@ -25,7 +25,8 @@
 
 ## 下载与安装
 
-1. 下载 [`dist/掌上成理-debug.apk`](dist/掌上成理-debug.apk)。
+1. 下载 [`dist/掌上成理-debug.apk`](dist/掌上成理-debug.apk)，
+   或从 Gitee Release 下载：[掌上成理 0.1.9](https://gitee.com/hellogitee-star/cdut/releases/tag/Android)。
 2. 手机允许「安装未知来源应用」后安装。
 3. 打开 App → 统一身份认证登录（学号 + 密码）。
    校外或使用流量时会自动走 WebVPN，无需安装任何 VPN 客户端。
