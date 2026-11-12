@@ -44,3 +44,7 @@ docs/
 
 # ---- 对外分发包（这是唯一允许入库的 apk）----
 !dist/掌上成理-debug.apk
+
+# 发布签名（不要入库）
+keystore/
+keystore.properties
