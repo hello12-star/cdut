@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -10,18 +12,50 @@ android {
     namespace = "com.yh.schedule"
     compileSdk = 35
 
+    // 发布签名：keystore.properties 不进仓库；缺失时回落到 debug 签名，保证别人 clone 下来也能构建
+    val keystoreProps = Properties().apply {
+        val f = rootProject.file("keystore.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    signingConfigs {
+        create("release") {
+            if (keystoreProps.isNotEmpty()) {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     defaultConfig {
         applicationId = "com.yh.schedule"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.1.9"
+        versionCode = 13
+        versionName = "0.2.2"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // 参考 HFUT-Schedule：release 开 R8 + 资源压缩
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = if (keystoreProps.isNotEmpty()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+    // ABI 拆分：按架构产出三份 APK + 一个 universal 兜底（直装用 universal）
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86_64")
+            isUniversalApk = true
         }
     }
     compileOptions {
@@ -44,7 +78,8 @@ android {
  * 保留 app-debug.apk 作为构建产物，另复制一份可分发文件到 app/build/dist/。
  */
 tasks.register<Copy>("copyDebugApk") {
-    from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
+    // ABI 拆分后没有单一的 app-debug.apk，分发取 universal 那份
+    from(layout.buildDirectory.file("outputs/apk/debug/app-universal-debug.apk"))
     into(layout.buildDirectory.dir("dist"))
     rename { "掌上成理-debug.apk" }
 }
@@ -54,7 +89,7 @@ tasks.configureEach {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
+    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.13.1")
@@ -78,10 +113,13 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.datastore:datastore-preferences:1.1.7")
 
     // 查询中心入口拖拽排序
     implementation("sh.calvin.reorderable:reorderable:3.1.0")
+
+    // 桌面小组件（与参考源码 HFUT-Schedule 的 FocusWidgetReceiver 同方案）
+    implementation("androidx.glance:glance-appwidget:1.1.1")
 
     testImplementation("junit:junit:4.13.2")
 }

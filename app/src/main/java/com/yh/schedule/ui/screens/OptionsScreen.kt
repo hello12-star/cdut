@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Logout
@@ -110,6 +111,8 @@ fun OptionsScreen(
     val courseLineScale by repo.courseLineScale.collectAsState(initial = 1f)
     val infiniteWheel by repo.infiniteWheel.collectAsState(initial = true)
     val autoRefresh by repo.autoRefreshLogin.collectAsState(initial = false)
+    val colorfulCourses by repo.colorfulCourses.collectAsState(initial = true)
+    val autoCalibrateTerm by repo.autoCalibrateTerm.collectAsState(initial = true)
     val updateState by UpdateManager.state.collectAsState()
     // 接入方式是运行期自动判定的：订阅版本号，网络切换后这一行文案跟着更新
     val accessVersion by com.yh.schedule.core.NetworkAccess.version.collectAsState()
@@ -174,6 +177,54 @@ fun OptionsScreen(
         }
     }
 
+    /** 导出当前周课表长图：写应用下载目录后弹分享面板 */
+    fun exportPng() {
+        scope.launch {
+            val result = runCatching {
+                val week = com.yh.schedule.core.SchoolCalendar.currentWeek()
+                val courses = repo.timetable(week)
+                val bmp = com.yh.schedule.core.TimetableExporter.toBitmap(courses, week, "第${week}周")
+                val file = withContext(Dispatchers.IO) {
+                    com.yh.schedule.core.TimetableExporter.writeToDownloads(
+                        context, "掌上成理课表-第${week}周.png",
+                    ) { out -> bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out) }
+                }
+                bmp.recycle()
+                com.yh.schedule.core.TimetableExporter.share(context, file, "image/png")
+            }
+            if (result.isFailure) {
+                Toast.makeText(
+                    context,
+                    "导出失败：${result.exceptionOrNull()?.message.orEmpty()}",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
+    /** 导出整学期 .ics：每次上课一条事件，导入系统日历后自动提醒 */
+    fun exportIcs() {
+        scope.launch {
+            val result = runCatching {
+                val courses = repo.timetable(com.yh.schedule.core.SchoolCalendar.currentWeek())
+                val text = com.yh.schedule.core.TimetableExporter.toIcs(courses)
+                val file = withContext(Dispatchers.IO) {
+                    com.yh.schedule.core.TimetableExporter.writeToDownloads(
+                        context, "掌上成理课表.ics",
+                    ) { out -> out.write(text.toByteArray(Charsets.UTF_8)) }
+                }
+                com.yh.schedule.core.TimetableExporter.share(context, file, "text/calendar")
+            }
+            if (result.isFailure) {
+                Toast.makeText(
+                    context,
+                    "导出失败：${result.exceptionOrNull()?.message.orEmpty()}",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(12.dp),
@@ -216,6 +267,11 @@ fun OptionsScreen(
                     is UpdateManager.UpdateState.Downloading -> {
                         OptionDivider()
                         UpdateDownloadingBlock(s)
+                    }
+
+                    is UpdateManager.UpdateState.Merging -> {
+                        OptionDivider()
+                        UpdateMergingBlock()
                     }
 
                     is UpdateManager.UpdateState.Downloaded -> {
@@ -358,6 +414,14 @@ fun OptionsScreen(
                     },
                 )
                 OptionDivider()
+                OptionRow(
+                    icon = Icons.Filled.Tune,
+                    title = "课程配色",
+                    subtitle = if (colorfulCourses) "多彩：每门课不同颜色（点课程搜索里的色点可单独改）"
+                    else "统一：所有课程同一个颜色",
+                    onClick = { scope.launch { repo.setColorfulCourses(!colorfulCourses) } },
+                )
+                OptionDivider()
                 OptionSliderRow(
                     icon = Icons.Filled.MenuBook,
                     title = "课程文字行距",
@@ -368,6 +432,24 @@ fun OptionsScreen(
                     onValueChangeFinished = {
                         scope.launch { repo.setCourseLineScale(lineScaleDraft) }
                     },
+                )
+            }
+        }
+
+        item {
+            OptionSection("课表导出") {
+                OptionRow(
+                    icon = Icons.Filled.Image,
+                    title = "导出课表长图",
+                    subtitle = "当前周课表存成 PNG，可直接发群里",
+                    onClick = { exportPng() },
+                )
+                OptionDivider()
+                OptionRow(
+                    icon = Icons.Filled.CalendarMonth,
+                    title = "导出 .ics 日历",
+                    subtitle = "整学期课程导入系统日历，含教室与教师",
+                    onClick = { exportIcs() },
                 )
             }
         }
@@ -397,10 +479,22 @@ fun OptionsScreen(
                 OptionRow(
                     icon = Icons.Filled.CalendarMonth,
                     title = "学期起始日",
-                    subtitle = "当前 ${termStart.monthValue}月${termStart.dayOfMonth}日；点按恢复默认 " +
-                            "${SchoolCalendar.DEFAULT_TERM_START_MONDAY.monthValue}月" +
+                    subtitle = "当前 ${termStart.monthValue}月${termStart.dayOfMonth}日；点按恢复默认 " +                            "${SchoolCalendar.DEFAULT_TERM_START_MONDAY.monthValue}月" +
                             "${SchoolCalendar.DEFAULT_TERM_START_MONDAY.dayOfMonth}日",
                     onClick = { showResetTerm = true },
+                )
+                OptionDivider()
+                OptionRow(
+                    icon = Icons.Filled.DateRange,
+                    title = "学期起始日自动校准",
+                    subtitle = if (autoCalibrateTerm) {
+                        "开启：教务页周次连续两次一致才更新，避免探测错误算错整学期"
+                    } else {
+                        "已关闭：周次只记录不落库，始终使用当前值"
+                    },
+                    onClick = {
+                        scope.launch { repo.setAutoCalibrateTerm(!autoCalibrateTerm) }
+                    },
                 )
                 OptionDivider()
                 OptionRow(
@@ -660,7 +754,13 @@ private fun updateSubtitle(state: UpdateManager.UpdateState, versionName: String
         UpdateManager.UpdateState.Checking -> "正在检查更新…"
         UpdateManager.UpdateState.UpToDate -> "已是最新版本 ${versionName.ifBlank { "未知" }}"
         is UpdateManager.UpdateState.Available -> "发现新版本 ${state.info.versionName}"
-        is UpdateManager.UpdateState.Downloading -> "正在下载 ${state.progress}%"
+        is UpdateManager.UpdateState.Downloading ->
+            if (state.incremental) {
+                "正在下载增量包 ${state.progress}%"
+            } else {
+                "正在下载完整安装包 ${state.progress}%"
+            }
+        is UpdateManager.UpdateState.Merging -> "正在合成增量包…"
         is UpdateManager.UpdateState.Downloaded -> "新版本 ${state.info.versionName} 已下载，可安装"
         is UpdateManager.UpdateState.Failed -> state.message
         UpdateManager.UpdateState.Idle -> "当前版本 ${versionName.ifBlank { "未知" }}；点按检查"
@@ -688,6 +788,14 @@ private fun UpdateAvailableBlock(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        if (info.patchUrl.isNotBlank() && info.patchSize > 0) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "增量包 ${UpdateManager.formatSize(info.patchSize)}（满足条件时优先使用）",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End,
@@ -701,12 +809,28 @@ private fun UpdateAvailableBlock(
 @Composable
 private fun UpdateDownloadingBlock(state: UpdateManager.UpdateState.Downloading) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text("正在下载 ${state.progress}%", style = MaterialTheme.typography.bodySmall)
+        Text(
+            if (state.incremental) {
+                "正在下载增量包 ${state.progress}%"
+            } else {
+                "正在下载完整安装包 ${state.progress}%"
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
         Spacer(Modifier.height(6.dp))
         LinearProgressIndicator(
             progress = { state.progress / 100f },
             modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
+
+@Composable
+private fun UpdateMergingBlock() {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text("正在合成增量包…", style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(6.dp))
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
     }
 }
 

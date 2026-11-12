@@ -77,11 +77,30 @@ fun AppRoot(app: CdutApp) {
     val store = remember { SessionStore(ctx.applicationContext) }
     val repo = remember { Repository(ctx.applicationContext, app, store) }
 
+    // 本地是否已有可展示的课表缓存：决定「登录不上时能不能先看课表」
+    var hasCache by remember { mutableStateOf(false) }
+    // 离线查看：未登录但本地有缓存时，直接进主界面看上次同步的数据
+    var offlineView by remember { mutableStateOf(false) }
+
     // 用已持久化的学期第一周周一覆盖硬编码默认值（首次启动没有记录就用默认）
     // 同时读一次凭据：老版本存的是明文密码，读取时会静默重写为 Keystore 加密后的密文
     LaunchedEffect(Unit) {
         repo.loadTermStartMonday()
         repo.savedCredentials()
+        hasCache = repo.hasCachedTimetable()
+        // 每天首次启动自动备份一次（同一个文件覆盖，不堆积）；失败静默，不打扰使用
+        runCatching {
+            val last = repo.lastAutoBackupAt()
+            if (System.currentTimeMillis() - last > 24 * 60 * 60 * 1000L) {
+                val raw = repo.exportBackupJson()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    com.yh.schedule.core.TimetableExporter.writeToDownloads(
+                        ctx, "掌上成理自动备份.json",
+                    ) { out -> out.write(raw.toByteArray(Charsets.UTF_8)) }
+                }
+                repo.markAutoBackupAt(System.currentTimeMillis())
+            }
+        }
     }
 
     val loggedIn by androidx.compose.runtime.produceState<Boolean?>(initialValue = null) {
@@ -90,7 +109,8 @@ fun AppRoot(app: CdutApp) {
     var showCasLogin by remember { androidx.compose.runtime.mutableStateOf(false) }
 
     // 接入方式判定：校园网 WiFi 直连、蜂窝/校外 WiFi 走 VPN。
-    // 判定完成前不渲染登录/主界面，避免先把 CAS 页加载到错误的通道上。
+    // 登录页必须在判定完成后才渲染，避免把 CAS 页加载到错误的通道上；
+    // 已登录用户则先用本地缓存直接进主页，探测在后台补，不必白等最多 2.5 秒。
     var accessReady by remember { mutableStateOf(false) }
     val rootScope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(Unit) {
@@ -137,21 +157,42 @@ fun AppRoot(app: CdutApp) {
                 .background(MaterialTheme.colorScheme.background)
                 .statusBarsPadding(),
         ) {
-            if (!accessReady) {
+            // 已登录用户不再等网络探测：课表页只读缓存，首屏应先出现；
+            // 需要联网的抓取/静默重登会自己等 NetworkAccess.ready。
+            if (!accessReady && loggedIn != true) {
                 // 正在判定直连/VPN（WiFi 下最多等 2.5 秒探测）
                 androidx.compose.material3.CircularProgressIndicator(
                     modifier = Modifier.align(androidx.compose.ui.Alignment.Center),
                 )
             } else when (loggedIn) {
                 null -> { /* DataStore 首次读取中 */ }
-                false -> if (showCasLogin) {
-                    com.yh.schedule.ui.screens.CasLoginScreen(
+                false -> when {
+                    // 登录不上但本地上次同步过课表：直接进主界面看缓存，
+                    // 不要因为认证超时让「看课表」这件事彻底做不了
+                    offlineView && hasCache -> MainNav(repo = repo, darkTheme = darkTheme)
+                    showCasLogin -> com.yh.schedule.ui.screens.CasLoginScreen(
                         repo = repo,
                         onSuccess = { onLoginDone() },
                         onBack = { showCasLogin = false },
+                        onUseCache = if (hasCache) {
+                            {
+                                showCasLogin = false
+                                offlineView = true
+                                android.widget.Toast.makeText(
+                                    ctx,
+                                    "登录未完成，当前显示上次同步的课表",
+                                    android.widget.Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        } else null,
                     )
-                } else {
-                    LoginScreen(repo = repo, onCasLogin = { showCasLogin = true })
+                    else -> LoginScreen(
+                        repo = repo,
+                        onCasLogin = { showCasLogin = true },
+                        onViewCache = if (hasCache) {
+                            { offlineView = true }
+                        } else null,
+                    )
                 }
                 true -> MainNav(repo = repo, darkTheme = darkTheme)
             }
@@ -164,6 +205,8 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
     val nav = rememberNavController()
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var showRelogin by remember { androidx.compose.runtime.mutableStateOf(false) }
+    // 本地是否有课表缓存：登录失败时用来决定「能不能先回去看课表」
+    var hasCache by remember { mutableStateOf(false) }
     val forceWebViewDark by repo.webViewDark.collectAsState(initial = false)
 
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -172,6 +215,7 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
     // ① 选项页开启「自动刷新登录」→ 冷启动后台刷新一次（D4，只认冷启动时的开关值）；
     // ② 接入方式变了（校园网 ↔ 流量/校外 WiFi）→ 两种会话不通用，必须重登一次。
     val accessVersion by com.yh.schedule.core.NetworkAccess.version.collectAsState()
+    val netReady by com.yh.schedule.core.NetworkAccess.ready.collectAsState()
     var autoLoginCreds by remember { mutableStateOf<Pair<String, String>?>(null) }
     var autoLoginReason by remember { mutableStateOf<String?>(null) }   // cold / mode
     var autoLoginDone by remember { mutableStateOf(false) }
@@ -180,8 +224,12 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
     var coldRefreshPending by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
+        hasCache = repo.hasCachedTimetable()
         val creds = repo.savedCredentials()
         autoLoginCreds = creds
+        // 先用缓存渲染主线后，这里必须等首次接入判定完成再比较接入方式，
+        // 否则会把「默认 VPN → 探测后直连」误判成网络切换，刚启动就白跑一次重登。
+        com.yh.schedule.core.NetworkAccess.ready.first { it }
         val coldRefresh = repo.autoRefreshLogin.first()
         val lastMode = repo.loginAccessVpn()
         // D4 只对已有课表缓存的回访用户生效：首次登录/刚清缓存时，聚焦页自己的
@@ -197,15 +245,17 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
 
     // 冷启动自动刷新必须让位给首屏：WebView 初始化会抢主线程，太早启动会把
     // 课表块推迟几秒。MainScaffold 画完第一帧并留出 4 秒后再开始后台刷新。
-    LaunchedEffect(mainUiReady, coldRefreshPending) {
-        if (mainUiReady && coldRefreshPending && !autoLoginDone) {
+    LaunchedEffect(mainUiReady, coldRefreshPending, netReady) {
+        if (mainUiReady && coldRefreshPending && !autoLoginDone && netReady) {
             coldRefreshPending = false
             autoLoginReason = "cold"
         }
     }
 
     // 首次进入只记基线；运行中网络切换导致的方式变化才触发静默重登
-    LaunchedEffect(accessVersion) {
+    LaunchedEffect(accessVersion, netReady) {
+        // 首次判定完成前只记录、不比较，避免把启动时的默认值当成一次网络切换
+        if (!netReady) return@LaunchedEffect
         val seen = seenAccessVersion
         if (seen == null) {
             seenAccessVersion = accessVersion
@@ -238,6 +288,8 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
                         "data?url=${android.net.Uri.encode(url)}&title=${android.net.Uri.encode(title)}&kind=$kind"
                     )
                 },
+                openExam = { nav.navigate("exam") },
+                openCourseSearch = { nav.navigate("courses") },
                 onRelogin = { showRelogin = true },
                 onUiReady = { mainUiReady = true },
             ) }
@@ -285,6 +337,28 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
                     },
                 )
             }
+
+            // 考试安排：本机结构化页（WebView 抓表 → 落库 → 原生列表）
+            composable("exam") {
+                com.yh.schedule.ui.screens.ExamScreen(
+                    repo = repo,
+                    onBack = { nav.popBackStack() },
+                    onOpenWeb = {
+                        val url = com.yh.schedule.core.WebConst.JW_EXAM_URL
+                        nav.navigate(
+                            "web?url=${android.net.Uri.encode(url)}&title=${android.net.Uri.encode("考试安排")}"
+                        )
+                    },
+                )
+            }
+
+            // 课程搜索：只在本地缓存课表里检索
+            composable("courses") {
+                com.yh.schedule.ui.screens.CourseSearchScreen(
+                    repo = repo,
+                    onBack = { nav.popBackStack() },
+                )
+            }
         }
 
         // 静默重登：冷启动刷新（D4）或网络接入方式切换时各触发一次，不阻塞界面。
@@ -328,6 +402,17 @@ fun MainNav(repo: Repository, darkTheme: Boolean = false) {
                         showRelogin = false
                     },
                     onBack = { showRelogin = false },
+                    // 有缓存时登录超时自动关掉登录页，回到上次同步的课表
+                    onUseCache = if (hasCache) {
+                        {
+                            showRelogin = false
+                            android.widget.Toast.makeText(
+                                ctx,
+                                "登录未完成，当前显示上次同步的课表",
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    } else null,
                 )
             }
         }
@@ -339,6 +424,8 @@ private fun MainScaffold(
     repo: Repository,
     openWeb: (String, String) -> Unit,
     openData: (String, String, String) -> Unit,
+    openExam: () -> Unit = {},
+    openCourseSearch: () -> Unit = {},
     onRelogin: () -> Unit = {},
     onUiReady: () -> Unit = {},
 ) {
@@ -427,6 +514,8 @@ private fun MainScaffold(
                         openData = openData,
                         onOpenTimetable = { selected = 0 },
                         onOpenGradeStats = { overlay = Overlay.Grade },
+                        onOpenExams = openExam,
+                        onOpenCourseSearch = openCourseSearch,
                     )
                     3 -> OptionsScreen(
                         repo = repo,

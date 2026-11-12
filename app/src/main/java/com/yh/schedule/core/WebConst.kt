@@ -72,6 +72,8 @@ object WebConst {
         get() = if (USE_VPN) VPN_HTTP_HOST else JW_DIRECT_HOST
 
     val JW_TIMETABLE_URL: String get() = "$host/jsxsd/xskb/xskb_list.do"
+    /** 考试安排（xsksap_query 会跳到 xsksap_list 的查询结果页） */
+    val JW_EXAM_URL: String get() = "$host/jsxsd/xsks/xsksap_query"
     val JW_HOME_URL: String get() = "$host/jsxsd/"
 
     /** 抓取起始页：VPN 模式先到门户，直连模式直接进教务 */

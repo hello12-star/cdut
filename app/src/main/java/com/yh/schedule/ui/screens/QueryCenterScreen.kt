@@ -75,6 +75,12 @@ private sealed interface QueryAction {
 
     /** 本机聚合的成绩统计页（真实数据尚未接入时为空态） */
     data object LocalGrades : QueryAction
+
+    /** 本机结构化的考试安排页（WebView 抓表 → 落库 → 原生列表） */
+    data object Exams : QueryAction
+
+    /** 本机课程搜索页（只在已缓存课表里检索） */
+    data object CourseSearch : QueryAction
 }
 
 private data class QueryEntry(
@@ -106,11 +112,15 @@ private val QUERIES = listOf(
     ),
     QueryEntry(
         "考试安排", "考场 · 时间", "考试 考场 补考 监考",
-        Icons.Filled.Event, QueryAction.Data("$JW/xsks/xsksap_query", "exam"),
+        Icons.Filled.Event, QueryAction.Exams,
     ),
     QueryEntry(
         "我的课表", "教务 · 学期理论课表", "课表 课程 上课 教室",
         Icons.Filled.School, QueryAction.Timetable,
+    ),
+    QueryEntry(
+        "课程搜索", "按课程/教师/教室检索", "搜索 查找 课程 教师 教室 周次",
+        Icons.Filled.Search, QueryAction.CourseSearch,
     ),
     QueryEntry(
         "培养方案", "学分完成情况", "培养 方案 学分 毕业要求",
@@ -194,6 +204,10 @@ fun QueryCenterScreen(
     onOpenTimetable: () -> Unit,
     /** 打开本机成绩统计页（由调用方以全屏覆盖层承载） */
     onOpenGradeStats: () -> Unit,
+    /** 打开本机考试安排页（结构化展示，由调用方以全屏路由承载） */
+    onOpenExams: () -> Unit = {},
+    /** 打开本机课程搜索页 */
+    onOpenCourseSearch: () -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     val savedOrder by repo.queryOrder.collectAsState(initial = "")
@@ -293,6 +307,8 @@ fun QueryCenterScreen(
                             is QueryAction.Data -> openData(a.url, entry.title, a.kind)
                             QueryAction.Timetable -> onOpenTimetable()
                             QueryAction.LocalGrades -> onOpenGradeStats()
+                            QueryAction.Exams -> onOpenExams()
+                            QueryAction.CourseSearch -> onOpenCourseSearch()
                         }
                     }
                 }

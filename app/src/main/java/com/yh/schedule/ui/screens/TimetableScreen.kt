@@ -85,6 +85,8 @@ fun TimetableScreen(
     val courseAlpha by repo.courseAlpha.collectAsState(initial = 1f)
     val courseTextScale by repo.courseTextScale.collectAsState(initial = 1f)
     val courseLineScale by repo.courseLineScale.collectAsState(initial = 1f)
+    val courseColors by repo.courseColors.collectAsState(initial = emptyMap())
+    val colorfulCourses by repo.colorfulCourses.collectAsState(initial = true)
     var demo by remember { mutableStateOf(true) }
     // 是否存在真实课表缓存：用于区分「抓取还没成功」和「这周确实没排课」
     var hasCache by remember { mutableStateOf(false) }
@@ -192,6 +194,8 @@ fun TimetableScreen(
                 courseAlpha = courseAlpha,
                 courseTextScale = courseTextScale,
                 courseLineScale = courseLineScale,
+                courseColors = courseColors,
+                colorfulCourses = colorfulCourses,
                 onItemClick = { item ->
                     val eid = item.eventId
                     when {
@@ -298,7 +302,9 @@ internal fun TimetableScraper(
     onJson: (String) -> Unit,
     onFail: (String) -> Unit,
 ) {
-    var webView by remember { mutableStateOf<WebView?>(null) }
+    // 离开组合（抓取结束、切换 Tab、重试重建）时统一置位，
+    // 让已经排进消息队列的 postDelayed 回调立刻失效，避免 WebView 销毁后还在后台抓取。
+    val session = remember(tick) { ScrapeSession() }
 
     // 关键：用 key(tick) 让每次重试都重建 WebView。
     // AndroidView 的 factory 只在首次组合时执行，grabbed / retry / warmedUp 都是 factory 内部变量；
@@ -320,6 +326,14 @@ internal fun TimetableScraper(
                 var retry = 0
                 var warmedUp = false
                 var grabbed = false
+                // 成功或失败都算「已结束」：结束后所有轮询/回跳都必须停下，
+                // 否则抓取失败后 poll 仍会每 5 秒重新加载一次教务，耗电且反复打教务。
+                var finished = false
+                fun fail(msg: String) {
+                    if (finished || grabbed || session.released) return
+                    finished = true
+                    onFail(msg)
+                }
                 // 门户点击「教务管理系统」的次数。点击后若一直停在门户（页面用 window.open 或
                 // SPA 拦截），原逻辑会重载门户 → onPageFinished → 再点，形成无限循环。
                 // 这里限制次数，超过就带诊断信息失败，不再空转。
@@ -337,7 +351,7 @@ internal fun TimetableScraper(
                 fun trailText(): String = urlTrail.joinToString(" → ")
 
                 fun grab(view: WebView, attempt: Int = 0) {
-                    if (grabbed) return
+                    if (grabbed || finished || session.released) return
                     view.evaluateJavascript(
                         "(function(){" +
                                 "var t=document.getElementById('timetable');" +
@@ -378,21 +392,23 @@ internal fun TimetableScraper(
                         when {
                             // 会话过期：教务返回未登录 JSON，立即提示而不是干等
                             payload == "NOT_LOGIN" ->
-                                onFail("登录已过期（教务返回未登录）")
+                                fail("登录已过期（教务返回未登录）")
                             payload == "NOT_READY" && attempt < 20 ->
                                 view.postDelayed({ grab(view, attempt + 1) }, 2000)
-                            payload == "NOT_READY" -> onFail("页面长时间未渲染出课表，请重试")
-                            payload == "EMPTY_TABLE" -> onFail("课表页已打开但本学期暂无课程安排")
-                            payload.isBlank() -> onFail("页面内容为空，请重试")
+                            payload == "NOT_READY" -> fail("页面长时间未渲染出课表，请重试")
+                            payload == "EMPTY_TABLE" -> fail("课表页已打开但本学期暂无课程安排")
+                            payload.isBlank() -> fail("页面内容为空，请重试")
                             payload.contains("flag1") && payload.contains("msgContent") ->
-                                onFail("教务会话已失效（接口返回未登录）")
+                                fail("教务会话已失效（接口返回未登录）")
                             // 新格式 {"w":周次,"t":[课程行]}；旧格式是纯数组 [...]。两种都要认，
                             // 只判 "[" 会让新格式全部落到下面的 onFail，表现为"登录成功但抓不到课表"
                             payload.startsWith("[") || payload.startsWith("{") -> {
+                                if (finished || session.released) return@evaluateJavascript
                                 grabbed = true
+                                finished = true
                                 onJson(payload)
                             }
-                            else -> onFail("未能读取课表数据，请重试")
+                            else -> fail("未能读取课表数据，请重试")
                         }
                     }
                 }
@@ -420,7 +436,7 @@ internal fun TimetableScraper(
                     ) { info ->
                         val msg = prefix + "｜" + decodeJsString(info) + "｜轨迹: " + trailText()
                         android.util.Log.i("VPNScrape", msg)
-                        onFail(msg)
+                        fail(msg)
                     }
                 }
 
@@ -491,7 +507,7 @@ internal fun TimetableScraper(
                             "return 'NO_LINK';})()"
                     view.evaluateJavascript(js) { raw ->
                         val clickResult = decodeJsString(raw)
-                        android.util.Log.i("VPNScrape", "clickJwLink: $clickResult")
+                        android.util.Log.i("VPNScrape", "clickJwLink: ${clickResult.substringBefore('?')}")
                         when {
                             clickResult.startsWith("NAV:") ->
                                 view.loadUrl(clickResult.removePrefix("NAV:"))
@@ -506,7 +522,8 @@ internal fun TimetableScraper(
                                         val u2 = info.substringAfter('|')
                                         android.util.Log.i(
                                             "VPNScrape",
-                                            "after click: open=$opened now=$u2",
+                                            "after click: open=${opened.substringBefore('?')} " +
+                                                    "now=${u2.substringBefore('?')}",
                                         )
                                         when {
                                             // 钩到的 window.open 目标：直接在本 WebView 打开。
@@ -516,7 +533,10 @@ internal fun TimetableScraper(
                                                 portalClicks = 0
                                                 val target =
                                                     com.yh.schedule.core.WebConst.proxify(opened)
-                                                android.util.Log.i("VPNScrape", "open proxified: $target")
+                                                android.util.Log.i(
+                                                    "VPNScrape",
+                                                    "open proxified: ${target.substringBefore('?')}",
+                                                )
                                                 view.loadUrl(target)
                                             }
                                             u2.contains("xskb/xskb_list") -> grab(view)
@@ -543,9 +563,12 @@ internal fun TimetableScraper(
                 }
 
                 fun inspect(view: WebView) {
+                    if (finished || session.released) return
                     view.evaluateJavascript("location.href") { raw ->
+                        if (finished || session.released) return@evaluateJavascript
                         val u = decodeJsString(raw)
-                        android.util.Log.i("VPNScrape", "inspect: $u")
+                        // 只记录 host+path：SSO 跳转地址可能带 ticket，完整 URL 不应进日志
+                        android.util.Log.i("VPNScrape", "inspect: ${u.substringBefore('?')}")
                         view.evaluateJavascript(
                             "(function(){return (document.title||'')+'|'+document.readyState;})()"
                         ) { t ->
@@ -560,7 +583,7 @@ internal fun TimetableScraper(
                                     retry++
                                     view.postDelayed({ inspect(view) }, 4000)
                                 } else {
-                                    onFail("登录已过期（VPN 认证页未自动通过），请到「服务」页重新登录")
+                                    fail("登录已过期（VPN 认证页未自动通过），请到「服务」页重新登录")
                                 }
                             }
                             // 直连 CAS：VPN 模式下它没有 TGC，改走代理域的教务 SSO
@@ -575,7 +598,7 @@ internal fun TimetableScraper(
                                     retry++
                                     view.postDelayed({ inspect(view) }, 4000)
                                 } else {
-                                    onFail("登录已过期（仍停留在认证页）")
+                                    fail("登录已过期（仍停留在认证页）")
                                 }
                             }
                             u.contains("sso/login") -> {
@@ -583,14 +606,17 @@ internal fun TimetableScraper(
                                     retry++
                                     view.postDelayed({ inspect(view) }, 4000)
                                 } else {
-                                    onFail("登录已过期（仍停留在认证页）")
+                                    fail("登录已过期（仍停留在认证页）")
                                 }
                             }
                             u.contains("xskb/xskb_list") -> grab(view)
                             // 门户：从「推荐系统」点「教务管理系统」进去
                             u.contains("bsdt-") || u.contains("homePage") -> clickJwLink(view)
-                            // 已在教务域但不在课表页 → 直接去课表
-                            u.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) -> {
+                            // 已在教务域但不在课表页 → 直接去课表。
+                            // 直连（jw.cdut.edu.cn）和 VPN 代理域都要认：只认代理域的话，
+                            // 校园网直连会落到 else 反复回首页，最终报"未能进入课表页"。
+                            u.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) ||
+                                    u.contains("jw.cdut.edu.cn") -> {
                                 if (retry < 3) {
                                     retry++
                                     view.postDelayed(
@@ -598,10 +624,10 @@ internal fun TimetableScraper(
                                         2500,
                                     )
                                 } else {
-                                    onFail("已进入教务但打不开课表页，请重试")
+                                    fail("已进入教务但打不开课表页，请重试")
                                 }
                             }
-                            u.isBlank() -> onFail("无法读取页面地址，请重试")
+                            u.isBlank() -> fail("无法读取页面地址，请重试")
                             else -> {
                                 if (retry < 3) {
                                     retry++
@@ -610,7 +636,7 @@ internal fun TimetableScraper(
                                         3000,
                                     )
                                 } else {
-                                    onFail("未能进入课表页｜轨迹: " + trailText())
+                                    fail("未能进入课表页｜轨迹: " + trailText())
                                 }
                             }
                         }
@@ -643,28 +669,47 @@ internal fun TimetableScraper(
                         error: WebResourceError?,
                     ) {
                         if (request?.isForMainFrame == true) {
-                            onFail("页面加载失败：${error?.description ?: "网络错误"}")
+                            fail("页面加载失败：${error?.description ?: "网络错误"}")
                         }
                     }
                 }
-                webView = this
                 // 起始页由开关决定：VPN 模式先进门户，直连模式直接进教务
                 loadUrl(com.yh.schedule.core.WebConst.SCRAPE_ENTRY_URL)
 
                 // 兜底轮询：教务 SSO 跳转链有时页面加载完了也不回调 onPageFinished
-                // （表现为永远停在「正在检查教务系统登陆状态」）。每 5 秒看一次落点，
-                // 状态机照常推进；成功抓取后 grabbed 会拦住后续轮询。
+                // （表现为永远停在「正在检查教务系统登陆状态」）。每 5 秒看一次落点；
+                // 成功、失败、离开页面都会立即停止，并且总时长封顶，避免无限打教务。
                 val wv = this
-                fun poll() {
-                    if (grabbed) return
+                fun poll(remaining: Int) {
+                    if (grabbed || finished || session.released) return
+                    if (remaining <= 0) {
+                        fail("抓取超时（约 2 分钟），请重试")
+                        return
+                    }
                     inspect(wv)
-                    wv.postDelayed({ poll() }, 5000)
+                    if (!grabbed && !finished && !session.released) {
+                        wv.postDelayed({ poll(remaining - 1) }, 5000)
+                    }
                 }
-                wv.postDelayed({ poll() }, 6000)
+                wv.postDelayed({ poll(23) }, 6000)
+            }
+        },
+        onRelease = { view ->
+            // 隐藏 WebView 不会自动销毁：不销毁会常驻内存，内部定时器也会继续跑
+            session.released = true
+            runCatching {
+                view.stopLoading()
+                view.loadUrl("about:blank")
+                view.destroy()
             }
         },
     )
     }
+}
+
+/** 一次抓取会话的生命周期标记：onRelease 之后所有排队回调都应立即短路 */
+private class ScrapeSession {
+    @Volatile var released: Boolean = false
 }
 
 /** evaluateJavascript 回调是 JSON 字符串字面量，需还原 */

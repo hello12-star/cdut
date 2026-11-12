@@ -40,6 +40,7 @@ class Repository(
     private val db = AppDb.get(context)
     private val qz = QzClient(app)
     private val eventDao = db.customEventDao()
+    private val examDao = db.examRecordDao()
 
     val demoMode: Flow<Boolean> = store.demoMode
     val loggedIn: Flow<Boolean> = store.loggedIn
@@ -178,7 +179,15 @@ class Repository(
     /** 当前登录的账号（演示模式为「演示用户」）。仅用于选项页展示 */
     suspend fun currentAccount(): String? = store.account()
 
-    suspend fun logout() = store.logout()
+    /**
+     * 退出登录。
+     * 必须同时清掉抓取节流时间戳：logout() 会删除课表缓存，若节流标记还在，
+     * 重新登录后聚焦页会认为「6 小时内刚抓过」而不自动抓取，表现为课表一直空白。
+     */
+    suspend fun logout() {
+        store.logout()
+        resetScrapeGuard()
+    }
 
     /**
      * 课表：
@@ -225,7 +234,28 @@ class Repository(
     }
 
     /** 上次尝试抓课表的时间戳（ms），0 表示从未抓过 */
+    /** 学期起始日自动校准开关 */
+    val autoCalibrateTerm: Flow<Boolean> = store.autoCalibrateTerm
+
+    suspend fun setAutoCalibrateTerm(on: Boolean) = store.setAutoCalibrateTerm(on)
+
+    /** 课表配色模式：true=多彩，false=统一 */
+    val colorfulCourses: Flow<Boolean> = store.colorfulCourses
+
+    suspend fun setColorfulCourses(on: Boolean) = store.setColorfulCourses(on)
+
+    /** 课程颜色覆盖：课程名 → 调色板索引 */
+    val courseColors: Flow<Map<String, Int>> = store.courseColorOverrides
+
+    suspend fun setCourseColor(courseName: String, index: Int) =
+        store.setCourseColor(courseName, index)
+
     suspend fun lastScrapeAt(): Long = store.lastScrapeAt()
+
+    /** 上次自动备份时间（ms），0 = 从未备份 */
+    suspend fun lastAutoBackupAt(): Long = store.lastAutoBackupAt()
+
+    suspend fun markAutoBackupAt(ms: Long) = store.markAutoBackupAt(ms)
 
     /**
      * 标记"刚尝试过抓取"。
@@ -248,19 +278,34 @@ class Repository(
 
         val derived = QzTermParser.deriveTermStartMonday(weekOfTerm) ?: return
         val current = SchoolCalendar.termStartMonday
-        // 当前**不自动覆盖**，只记录，等真机确认周次探测可靠后再启用。
-        // 原因：页面上周次很容易探测错，而 termStartMonday 一旦被改坏，
-        // 所有课都会被算到错误的周次上，课表直接变空 —— 影响面太大，不能赌。
         android.util.Log.i(
             "QzTerm",
-            "探测到周次=$weekOfTerm → 推出学期起始日=$derived，当前使用=$current（未覆盖）",
+            "探测到周次=$weekOfTerm → 推出学期起始日=$derived，当前使用=$current",
         )
-        if (QzTermParser.isFarApart(current, derived, maxDays = 21)) {
-            android.util.Log.w("QzTerm", "两者相差超过 21 天，周次探测大概率有误")
+        // 灰度自动校准：页面周次很容易探测错，一次命中不敢直接覆盖（改坏了所有课都会算错周），
+        // 因此要求「连续两次探测结果完全一致」才写库；候选值持久化，跨进程仍然有效。
+        if (!store.autoCalibrateTerm.first()) {
+            android.util.Log.i("QzTerm", "自动校准已关闭，跳过")
+            return
         }
-        // 确认可靠后把下面两行打开即可启用自动校准：
-        // store.saveTermStartMonday(derived.toString())
-        // SchoolCalendar.termStartMonday = derived
+        if (QzTermParser.isFarApart(current, derived, maxDays = 45)) {
+            android.util.Log.w("QzTerm", "与当前值相差超过 45 天，按可疑值处理")
+        }
+        val pending = store.termStartCandidate()
+        if (pending?.first == derived.toString()) {
+            val times = pending.second + 1
+            if (times >= 2) {
+                store.saveTermStartMonday(derived.toString())
+                SchoolCalendar.termStartMonday = derived
+                store.clearTermStartCandidate()
+                android.util.Log.i("QzTerm", "连续 2 次一致，已校准学期起始日=$derived")
+            } else {
+                store.setTermStartCandidate(derived.toString(), times)
+            }
+        } else {
+            store.setTermStartCandidate(derived.toString(), 1)
+            android.util.Log.i("QzTerm", "记录候选学期起始日=$derived（等待下次确认）")
+        }
     }
 
     /** 读出已持久化的学期第一周周一（启动时调用，覆盖硬编码默认值） */
@@ -456,8 +501,31 @@ class Repository(
 
     suspend fun exams(): List<Exam> = withContext(Dispatchers.IO) {
         if (store.demoMode.first()) return@withContext MockData.exams
-        // 真实模式暂无考试数据源：返回空而不是演示数据（避免假数据冒充真实）
-        emptyList()
+        // 真实数据来自 WebView 抓取后落库（见 cacheExams），读不到就是空列表
+        examDao.all()
+            .mapNotNull { e ->
+                val date = runCatching { LocalDate.parse(e.examDate) }.getOrNull()
+                    ?: return@mapNotNull null
+                Exam(course = e.course, date = date, timeRange = e.timeRange, room = e.room)
+            }
+            .sortedBy { it.date }
+    }
+
+    /** 保存 WebView 抓取并结构化后的考试安排；整表替换，避免旧学期的考试残留 */
+    suspend fun cacheExams(list: List<Exam>) = withContext(Dispatchers.IO) {
+        examDao.clear()
+        if (list.isNotEmpty()) {
+            examDao.insertAll(
+                list.map {
+                    ExamRecordEntity(
+                        course = it.course,
+                        examDate = it.date.toString(),
+                        timeRange = it.timeRange,
+                        room = it.room,
+                    )
+                }
+            )
+        }
     }
 
     suspend fun grades(): List<GradeItem> = withContext(Dispatchers.IO) {

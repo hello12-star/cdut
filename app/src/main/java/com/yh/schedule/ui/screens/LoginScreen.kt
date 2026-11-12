@@ -29,7 +29,12 @@ import kotlinx.coroutines.launch
  * 密码不由本应用处理——统一认证在 WebView 内完成（成理 CAS 的瑞数防护要求）。
  */
 @Composable
-fun LoginScreen(repo: Repository, onCasLogin: () -> Unit) {
+fun LoginScreen(
+    repo: Repository,
+    onCasLogin: () -> Unit,
+    /** 本地已有课表缓存时传入：登录不上也能先看上次同步的课表 */
+    onViewCache: (() -> Unit)? = null,
+) {
     val scope = rememberCoroutineScope()
 
     Column(
@@ -61,6 +66,15 @@ fun LoginScreen(repo: Repository, onCasLogin: () -> Unit) {
                     onClick = { scope.launch { repo.login("", "", demo = true) } },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("演示模式进入（内置示例数据）") }
+
+                // 登录不上（超时 / 校园网不通）时，别让人连已同步的课表都看不到
+                if (onViewCache != null) {
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = { onViewCache?.invoke() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("查看上次同步的课表") }
+                }
 
                 Spacer(Modifier.height(14.dp))
                 Text(

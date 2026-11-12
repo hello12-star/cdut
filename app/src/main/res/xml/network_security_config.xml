@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  明文流量收窄：
+  - 默认只允许 HTTPS（Gitee、教务、CAS 全部走 https）；
+  - 仅校园 WebVPN 反向代理域允许 http（8118 端口本身只接 http，
+    这是学校代理的既有部署，无法改成 https）。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">vpn.cdut.edu.cn</domain>
+        <!--
+          教务 CAS 的 service 参数写死是 http://jw.cdut.edu.cn/sso/login.jsp，
+          认证成功后的 ticket 回跳走的是明文 http。只放行 https 会直接
+          ERR_CLEARTEXT_NOT_PERMITTED，现象是"网页能登、App 一直转圈/超时"。
+        -->
+        <domain includeSubdomains="true">jw.cdut.edu.cn</domain>
+    </domain-config>
+</network-security-config>

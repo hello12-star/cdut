@@ -2,6 +2,7 @@ package com.yh.schedule.core
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,18 +36,55 @@ object NetworkAccess {
     /** 接入方式每变化一次 +1（初始判定不算变化） */
     val version: StateFlow<Int> = _version
 
-    suspend fun refresh(context: Context) {
-        val cm = context.getSystemService(ConnectivityManager::class.java)
-        val caps = cm?.activeNetwork?.let { cm.getNetworkCapabilities(it) }
-        val connected = caps != null
-        val wifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+    private val _ready = MutableStateFlow(false)
 
-        val useVpn = when {
-            !connected -> true          // 没网时保持 VPN，等有网再判
-            !wifi -> true               // 蜂窝流量：按约定走 VPN
-            else -> withContext(Dispatchers.IO) { !probeDirect() }
+    /**
+     * 首次接入方式判定是否完成。
+     * 界面可以先用缓存内容立即渲染，但任何真正要联网的动作（抓取、静默重登）
+     * 都应等这里变为 true，避免用默认的 VPN 通道去打校园网直连。
+     */
+    val ready: StateFlow<Boolean> = _ready
+
+    suspend fun refresh(context: Context) {
+        try {
+            val cm = context.getSystemService(ConnectivityManager::class.java)
+            val net = cm?.activeNetwork
+            val caps = net?.let { cm.getNetworkCapabilities(it) }
+            val connected = caps != null
+            val wifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+
+            val useVpn = when {
+                !connected -> true          // 没网时保持 VPN，等有网再判
+                !wifi -> true               // 蜂窝流量：按约定走 VPN
+                else -> withContext(Dispatchers.IO) {
+                    cm == null || net == null || !isCdutNetwork(cm, net)
+                }
+            }
+            apply(useVpn)
+        } finally {
+            // 判定异常也要放行，否则界面会永远停在启动圈
+            _ready.value = true
         }
-        apply(useVpn)
+    }
+
+    /**
+     * 校园网判定：只有 DNS 或本机地址落在成理网段才算校内。
+     *
+     * 之前用「能不能打开 jw.cdut.edu.cn」来判定，这是错的——教务对公网开放，
+     * 在校外（甚至别的学校校园网）也能拿到响应，于是永远显示「校园网直连」，
+     * 实际却应该走 WebVPN。
+     */
+    private fun isCdutNetwork(cm: ConnectivityManager, net: Network): Boolean {
+        val lp = runCatching { cm.getLinkProperties(net) }.getOrNull() ?: return false
+        if (lp.dnsServers.any { isCdutAddress(it.hostAddress) }) return true
+        if (lp.linkAddresses.any { isCdutAddress(it.address.hostAddress) }) return true
+        return false
+    }
+
+    /** 成理公网出口/校内 DNS 网段（教育网 202.115/16、222.195/16） */
+    private fun isCdutAddress(host: String?): Boolean {
+        val ip = host?.substringBefore('%') ?: return false
+        return ip.startsWith("202.115.") || ip.startsWith("222.195.")
     }
 
     private fun apply(useVpn: Boolean) {

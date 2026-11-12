@@ -197,10 +197,18 @@ fun FocusScreen(
     // 后者一旦某条重置路径漏掉，就会永远不自动抓取，而且现象是静默无动作、极难排查。
     // 6 小时内不重复自动抓；换账号时会由 AppNav 清掉这个时间戳。
     LaunchedEffect(Unit) {
+        // 已登录用户可能早于网络探测就进到主页：抓取必须等接入方式确定，
+        // 否则会拿默认的 VPN 通道去打校园网直连。
+        com.yh.schedule.core.NetworkAccess.ready.first { it }
+        // 离线查看（未登录 / 会话已失效）时不要自动抓：没有会话只会白等约 2 分钟，
+        // 还把「登录已过期」的横幅顶在首页。用户仍可下拉刷新手动重试。
+        if (!repo.loggedIn.first()) return@LaunchedEffect
         val last = repo.lastScrapeAt()
         val stale = last == 0L || System.currentTimeMillis() - last > 6 * 60 * 60 * 1000L
         if (stale) {
-            repo.markScrapeAttempted()
+            // 不在这里记账：只有抓取真正结束（成功或失败）才算一次尝试。
+            // 中途切 Tab 会让隐藏 WebView 被销毁，若那时已记账，用户回来就会
+            // 被 6 小时节流挡住，课表一直空白。
             checking = true
             eduTick++
         }
@@ -211,6 +219,7 @@ fun FocusScreen(
         TimetableScraper(
             tick = eduTick,
             onJson = { json ->
+                scope.launch { repo.markScrapeAttempted() }
                 val (parsed, weekOfTerm) = QzJsTimetableParser.parseWithWeek(json)
                 checking = false
                 if (parsed.isEmpty()) {
@@ -226,6 +235,7 @@ fun FocusScreen(
                 }
             },
             onFail = { msg ->
+                scope.launch { repo.markScrapeAttempted() }
                 checking = false
                 authError = msg
             },
@@ -346,9 +356,12 @@ fun FocusScreen(
             androidx.compose.material3.pulltorefresh.PullToRefreshBox(
                 isRefreshing = checking,
                 onRefresh = {
-                    authError = null
-                    checking = true
-                    eduTick++
+                    scope.launch {
+                        com.yh.schedule.core.NetworkAccess.ready.first { it }
+                        authError = null
+                        checking = true
+                        eduTick++
+                    }
                 },
                 // 不再画默认的圆形指示器：顶部「正在检查教务系统登陆状态」卡片就是进度反馈，
                 // 两个转圈叠在一起会压住文字

@@ -1,9 +1,9 @@
 {
-    "versionCode":  12,
-    "versionName":  "0.2.1",
-    "apkUrl":  "https://gitee.com/hellogitee-star/cdut/releases/download/Android/cdut-helper-0.2.1-debug.apk",
-    "sha256":  "c8eb66b2d9e4e13c98a45188f8118a9293208ff6f04f1d4f4c5f1e610a8e2502",
-    "size":  20728730,
-    "changelog":  "0.2.1：新增课表导出长图/.ics、课程搜索、课程配色（多彩/统一）、今日课程小组件、每日自动备份；修复校园网误判与登录失败无法查看缓存课表。安装包为 universal（约 20MB，可覆盖旧版直接升级）。",
+    "versionCode":  13,
+    "versionName":  "0.2.2",
+    "apkUrl":  "https://gitee.com/hellogitee-star/cdut/releases/download/Android/cdut-helper-0.2.2-debug.apk",
+    "sha256":  "2b48eb9c46c143eb129d0a4ae9660a86b0705e1f2bcf509c03dd1e7814066ddb",
+    "size":  21089518,
+    "changelog":  "0.2.2：新增 bsdiff 增量更新，优先下载小体积补丁，失败自动回退完整安装包；本版继续使用 debug 签名以支持覆盖升级。安装包为 universal（约 20MB，可覆盖旧版直接升级）。",
     "publishedAt":  "2026-11-12"
 }

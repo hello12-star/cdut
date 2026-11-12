@@ -102,7 +102,13 @@ abstract class AppDb : RoomDatabase() {
         fun get(context: Context): AppDb = inst ?: synchronized(this) {
             inst ?: Room.databaseBuilder(context, AppDb::class.java, "yh_schedule.db")
                 .addMigrations(MIGRATION_2_3)
-                .fallbackToDestructiveMigration()
+                // 只允许 v1 重建（v1 的表结构已无从考证）。
+                // 不能把 2 也列进来：MIGRATION_2_3 的起始版本就是 2，
+                // Room 会直接抛 IllegalArgumentException "Inconsistency detected"，
+                // 而且是在 build() 里抛，等于一启动就崩。
+                // v3 之后新增字段必须写 Migration：否则宁可构建期/测试期暴露，
+                // 也不要静默清空用户的日程。
+                .fallbackToDestructiveMigrationFrom(1)
                 .build()
                 .also { inst = it }
         }

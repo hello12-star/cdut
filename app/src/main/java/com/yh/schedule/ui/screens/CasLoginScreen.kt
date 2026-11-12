@@ -31,6 +31,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -85,6 +86,11 @@ fun CasLoginScreen(
     repo: Repository,
     onSuccess: () -> Unit,
     onBack: () -> Unit,
+    /**
+     * 本地已有课表缓存时传入：登录超时不再把人扣在登录页，直接回落到上次同步的课表。
+     * 为 null 表示没有可看的历史数据，只能留在登录页重试。
+     */
+    onUseCache: (() -> Unit)? = null,
 ) {
     var account by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -137,6 +143,9 @@ fun CasLoginScreen(
                 busy = false
                 status = "登录未完成"   // 同步重置，避免残留在"正在登录…"
                 error = "登录超时，请检查网络后重试（若反复失败，可点到「服务」页重新登录）"
+                // 已经点过「登录」仍被判超时，就别再把人扣在登录页：
+                // 有上次同步的课表就先回到课表界面，登录可以之后再试。
+                onUseCache?.invoke()
             }
         }
     }
@@ -152,7 +161,10 @@ fun CasLoginScreen(
                 if (all[i].type !== 'hidden' && all[i].offsetParent !== null) capVisible = true;
               }
               if (capVisible) return 'CAPTCHA';
-              if (t.indexOf('密码错误') >= 0 || t.indexOf('用户名或密码') >= 0) return 'BAD';
+              // 「登录失败。」是 CDUT 新版 CAS 对账号/密码不匹配的实际文案，
+              // 不认这句就会一直等到 45 秒超时，把"密码错"误报成"网络超时"
+              if (t.indexOf('密码错误') >= 0 || t.indexOf('用户名或密码') >= 0
+                  || t.indexOf('登录失败') >= 0) return 'BAD';
               if (t.indexOf('锁定') >= 0 || t.indexOf('冻结') >= 0) return 'LOCKED';
               if (t.indexOf('验证码') >= 0) return 'CAPTCHA';
               return 'WAIT';
@@ -189,10 +201,13 @@ fun CasLoginScreen(
         val js = """
             (function(){
               function setVal(id, v){
+                // 新版 CAS 的真实字段是 hidden + Vue v-model（id=username/password），
+                // 可见框只是 Element UI 的 el-input。以前这里跳过 hidden 元素，
+                // 结果提交上去的是空账号空密码，页面只会回"登录失败。"。
+                // hidden 字段同样要写值并派发 input，否则 v-model 不会更新。
                 var els = document.querySelectorAll('#' + id);
                 for (var i = 0; i < els.length; i++) {
                   var el = els[i];
-                  if (el.type === 'hidden' || el.offsetParent === null) continue;
                   el.value = v;
                   el.dispatchEvent(new Event('input',{bubbles:true}));
                   el.dispatchEvent(new Event('change',{bubbles:true}));
@@ -316,6 +331,15 @@ fun CasLoginScreen(
                 else MaterialTheme.colorScheme.primary,
             )
 
+            // 有缓存时的显式出口：不必等超时也能立刻回去看课表
+            if (error != null && onUseCache != null) {
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = { onUseCache?.invoke() },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("先看上次同步的课表") }
+            }
+
             Spacer(Modifier.height(10.dp))
             Text(
                 "说明：登录由后台完成，官网页面不会打扰你。勾选「记住账号密码」后，" +
@@ -384,7 +408,8 @@ fun CasLoginScreen(
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 val u = url.orEmpty()
-                                android.util.Log.i("CasLogin", "onPageFinished: $u")
+                                // 只记 host+path：SSO 跳转 URL 可能带 ticket，完整地址不应进日志
+                                android.util.Log.i("CasLogin", "onPageFinished: ${u.substringBefore('?')}")
                                 when {
                                     u.contains("cas.paas.cdut.edu.cn/cas/login") ||
                                             u.contains("cas-paas-cdut-edu-cn-s.vpn.cdut.edu.cn") ||
@@ -407,7 +432,13 @@ fun CasLoginScreen(
                                             u.contains("vpn.cdut.edu.cn/portal") ||
                                             u.contains(com.yh.schedule.core.WebConst.VPN_PROXY_HOST) ||
                                             u.contains("jw.cdut.edu.cn") -> {
-                                        if (!handled && (busy || loginSubmitted || showWebView)) {                                            handled = true
+                                        // 已经带着有效 CAS 会话直接跳进教务主框架（用户没点「登录」也能到）
+                                        // 同样算登录成功，否则会卡在表单上一直显示"环境准备较慢"
+                                        val reachedMain = u.contains("jsxsd/framework") ||
+                                                u.contains("xsMainV")
+                                        if (!handled &&
+                                            (busy || loginSubmitted || showWebView || reachedMain)
+                                        ) {                                            handled = true
                                             loginSubmitted = false
                                             busy = false
                                             status = "登录成功，正在保存…"
@@ -542,10 +573,10 @@ fun AutoLoginRefresher(
                     val js = """
                         (function(){
                           function setVal(id, v){
+                            // 同 CasLoginScreen.submit：真实字段是 hidden + v-model，不能跳过
                             var els = document.querySelectorAll('#' + id);
                             for (var i = 0; i < els.length; i++) {
                               var el = els[i];
-                              if (el.type === 'hidden' || el.offsetParent === null) continue;
                               el.value = v;
                               el.dispatchEvent(new Event('input',{bubbles:true}));
                               el.dispatchEvent(new Event('change',{bubbles:true}));

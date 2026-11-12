@@ -169,6 +169,10 @@ fun TimetableAxis(
     courseTextScale: Float = 1f,
     /** 课程块文字行距缩放：1f 默认 */
     courseLineScale: Float = 1f,
+    /** 课程配色覆盖：课程名 → 调色板索引（空则按课程名散列取默认色） */
+    courseColors: Map<String, Int> = emptyMap(),
+    /** true=按课程多彩；false=统一配色（对齐旧版） */
+    colorfulCourses: Boolean = true,
     onItemClick: (TimeTableItem) -> Unit = {},
     onBlankDoubleTap: (dayOfWeek: Int, hour: Float) -> Unit = { _, _ -> },
     onWeekTitleClick: (() -> Unit)? = null,
@@ -328,7 +332,17 @@ fun TimetableAxis(
                         val yEnd = AxisTime.toY(p.end, hourPx, startF)
                         val h = (yEnd - yStart).coerceAtLeast(hourPx * 0.4f)
 
-                        val (bg, fg) = blockColors(p.item.type)
+                        // 课程按课程名取色（可在「课程搜索」页里改），自建日程/考试用固定色
+                        val (bg, fg) = if (p.item.type == TimeTableType.COURSE && colorfulCourses) {
+                            val idx = com.yh.schedule.core.CoursePalette.indexFor(p.item.name, courseColors)
+                            androidx.compose.ui.graphics.Color(
+                                com.yh.schedule.core.CoursePalette.background(idx)
+                            ) to androidx.compose.ui.graphics.Color(
+                                com.yh.schedule.core.CoursePalette.FOREGROUND
+                            )
+                        } else {
+                            blockColors(p.item.type)
+                        }
                         // 上下各延伸 5dp 让块更饱满
                         val extend = 5.dp
                         val extendPx = with(density) { extend.toPx() }

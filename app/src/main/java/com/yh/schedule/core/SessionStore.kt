@@ -10,6 +10,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 private val Context.dataStore by preferencesDataStore(name = "session")
 
@@ -41,6 +43,21 @@ class SessionStore(private val context: Context) {
 
         /** 上次尝试抓课表的时间戳（ms）。0 / 不存在 = 从未抓过 */
         private val KEY_LAST_SCRAPE = longPreferencesKey("last_scrape_at")
+
+        /** 上次自动备份的时间戳（ms）。0 / 不存在 = 从未备份 */
+        private val KEY_LAST_AUTO_BACKUP = longPreferencesKey("last_auto_backup_at")
+
+        /** 课程颜色覆盖：JSON 的 {课程名: 调色板索引} */
+        private val KEY_COURSE_COLORS = stringPreferencesKey("course_color_overrides")
+
+        /** 课表配色模式：true=多彩，false=统一 */
+        private val KEY_COLORFUL_COURSES = booleanPreferencesKey("colorful_courses")
+
+        /** 学期起始日自动校准开关（默认开：要求连续两次探测一致才落库） */
+        private val KEY_AUTO_CALIBRATE_TERM = booleanPreferencesKey("auto_calibrate_term")
+
+        /** 学期起始日候选值，格式 "yyyy-MM-dd|次数" */
+        private val KEY_TERM_CANDIDATE = stringPreferencesKey("term_start_candidate")
 
         // ---------- 偏好设置 ----------
 
@@ -230,6 +247,66 @@ class SessionStore(private val context: Context) {
 
     suspend fun markScrapeAt(ms: Long) {
         context.dataStore.edit { it[KEY_LAST_SCRAPE] = ms }
+    }
+
+    /** 上次自动备份时间（ms）。0 = 从未备份 */
+    suspend fun lastAutoBackupAt(): Long =
+        context.dataStore.data.first()[KEY_LAST_AUTO_BACKUP] ?: 0L
+
+    suspend fun markAutoBackupAt(ms: Long) {
+        context.dataStore.edit { it[KEY_LAST_AUTO_BACKUP] = ms }
+    }
+
+    /** 学期起始日自动校准 */
+    val autoCalibrateTerm: Flow<Boolean> =
+        context.dataStore.data.map { it[KEY_AUTO_CALIBRATE_TERM] ?: true }
+
+    suspend fun setAutoCalibrateTerm(on: Boolean) {
+        context.dataStore.edit { it[KEY_AUTO_CALIBRATE_TERM] = on }
+    }
+
+    /** 学期起始日候选值：日期 + 已连续命中次数 */
+    suspend fun termStartCandidate(): Pair<String, Int>? {
+        val raw = context.dataStore.data.first()[KEY_TERM_CANDIDATE] ?: return null
+        val parts = raw.split('|')
+        val count = parts.getOrNull(1)?.toIntOrNull() ?: return null
+        return parts[0] to count
+    }
+
+    suspend fun setTermStartCandidate(date: String, count: Int) {
+        context.dataStore.edit { it[KEY_TERM_CANDIDATE] = "$date|$count" }
+    }
+
+    suspend fun clearTermStartCandidate() {
+        context.dataStore.edit { it.remove(KEY_TERM_CANDIDATE) }
+    }
+
+    /** 课程配色模式：true=多彩（按课程取色），false=统一配色 */
+    val colorfulCourses: Flow<Boolean> =
+        context.dataStore.data.map { it[KEY_COLORFUL_COURSES] ?: true }
+
+    suspend fun setColorfulCourses(on: Boolean) {
+        context.dataStore.edit { it[KEY_COLORFUL_COURSES] = on }
+    }
+
+    /** 课程颜色覆盖：{课程名: 调色板索引}，随 DataStore 变化实时刷新 */
+    val courseColorOverrides: Flow<Map<String, Int>> =
+        context.dataStore.data.map { prefs -> parseColorOverrides(prefs[KEY_COURSE_COLORS]) }
+
+    suspend fun setCourseColor(courseName: String, index: Int) {
+        val current = parseColorOverrides(
+            context.dataStore.data.first()[KEY_COURSE_COLORS]
+        ).toMutableMap()
+        current[courseName] = index
+        context.dataStore.edit {
+            it[KEY_COURSE_COLORS] = Json.encodeToString(current)
+        }
+    }
+
+    private fun parseColorOverrides(raw: String?): Map<String, Int> {
+        if (raw.isNullOrBlank()) return emptyMap()
+        return runCatching { Json.decodeFromString<Map<String, Int>>(raw) }
+            .getOrDefault(emptyMap())
     }
 
     /** WebView 统一认证登录成功后提取的 CAS 域 Cookie（含 TGC） */
