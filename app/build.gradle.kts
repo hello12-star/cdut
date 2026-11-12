@@ -84,8 +84,40 @@ tasks.register<Copy>("copyDebugApk") {
     rename { "掌上成理-debug.apk" }
 }
 
+// 固定本地分发目录：每次构建后自动刷新 dist/latest，方便直接取用最新包
+val appVersionName = android.defaultConfig.versionName ?: "unknown"
+
+tasks.register<Copy>("copyLatestDebugApk") {
+    from(layout.buildDirectory.file("outputs/apk/debug/app-universal-debug.apk"))
+    into(rootProject.layout.projectDirectory.dir("dist/latest"))
+    rename { "掌上成理-debug.apk" }
+}
+
+tasks.register<Copy>("copyLatestDebugApkVersioned") {
+    from(layout.buildDirectory.file("outputs/apk/debug/app-universal-debug.apk"))
+    into(rootProject.layout.projectDirectory.dir("dist/latest"))
+    rename { "掌上成理-$appVersionName-debug.apk" }
+}
+
+tasks.register<Copy>("copyLatestReleaseApk") {
+    from(layout.buildDirectory.file("outputs/apk/release/app-universal-release.apk"))
+    into(rootProject.layout.projectDirectory.dir("dist/latest"))
+    rename { "掌上成理-release.apk" }
+}
+
+tasks.register<Copy>("copyLatestReleaseApkVersioned") {
+    from(layout.buildDirectory.file("outputs/apk/release/app-universal-release.apk"))
+    into(rootProject.layout.projectDirectory.dir("dist/latest"))
+    rename { "掌上成理-$appVersionName-release.apk" }
+}
+
 tasks.configureEach {
-    if (name == "assembleDebug") finalizedBy("copyDebugApk")
+    if (name == "assembleDebug") {
+        finalizedBy("copyDebugApk", "copyLatestDebugApk", "copyLatestDebugApkVersioned")
+    }
+    if (name == "assembleRelease") {
+        finalizedBy("copyLatestReleaseApk", "copyLatestReleaseApkVersioned")
+    }
 }
 
 dependencies {

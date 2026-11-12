@@ -172,6 +172,8 @@ gradlew.bat assembleDebug
 
 产物：`app\build\outputs\apk\debug\app-universal-debug.apk`（约 21 MB）。
 分发包：`app\build\dist\掌上成理-debug.apk`（`assembleDebug` 后自动复制）。
+本地固定目录：`dist\latest\`，每次 `assembleDebug` / `assembleRelease` 后自动刷新，
+包含 `掌上成理-debug.apk`、`掌上成理-release.apk` 及带版本号的副本；该目录已 gitignore。
 APK 统一走 Gitee Release 资产，仓库不再保存 APK。
 
 > 注意：Java 25 会被当前 Gradle / Kotlin 版本拒绝；本仓库的 `gradlew.bat` 直接调用 PATH 里的 `java`，
