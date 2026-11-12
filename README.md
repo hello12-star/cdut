@@ -2,9 +2,9 @@
 
 成都理工大学校园课表与日程助手（Android · Kotlin · Jetpack Compose）。
 
-**当前版本：0.1.9（debug）** ｜ 最低系统：Android 8.0（API 26） ｜ 包名：`com.yh.schedule`
+**当前版本：0.2.2（debug）** ｜ 最低系统：Android 8.0（API 26） ｜ 包名：`com.yh.schedule`
 
-**下载安装包：[掌上成理-debug.apk](dist/掌上成理-debug.apk)**
+**下载安装包：[掌上成理 0.2.2-debug.apk](https://gitee.com/hellogitee-star/cdut/releases/download/Android/cdut-helper-0.2.2-debug.apk)**
 
 > 个人自用工具，不上架应用商店。密码经 Android Keystore 加密后保存，
 > 教务登录全部在官方 WebView 页面完成。
@@ -21,12 +21,12 @@
 | 外观 | 深色模式、网页强制深色、课表块透明度 / 字号 / 行距 |
 | 设置 | 学期起始日、清除课表缓存、JSON 备份 / 恢复、无限滚轮、预测性返回 |
 | 自动刷新登录 | 可选；先进入主页，再用已保存账密后台刷新一次 CAS；失败在聚焦页提示（默认关闭） |
-| 应用内更新 | 检查 Gitee/GitHub 的 `update.json`；下载后校验 SHA256 并拉起系统安装器 |
+| 应用内更新 | 检查 Gitee/GitHub 的 `update.json`；优先下载 bsdiff 增量补丁，失败自动回退完整包；下载后校验 SHA256 并拉起系统安装器 |
 
 ## 下载与安装
 
-1. 下载 [`dist/掌上成理-debug.apk`](dist/掌上成理-debug.apk)，
-   或从 Gitee Release 下载：[掌上成理 0.1.9](https://gitee.com/hellogitee-star/cdut/releases/tag/Android)。
+1. 从 Gitee Release 下载 [掌上成理 0.2.2](https://gitee.com/hellogitee-star/cdut/releases/tag/Android)
+   （`cdut-helper-0.2.2-debug.apk`，约 20 MB，可覆盖旧版升级）。
 2. 手机允许「安装未知来源应用」后安装。
 3. 打开 App → 统一身份认证登录（学号 + 密码）。
    校外或使用流量时会自动走 WebVPN，无需安装任何 VPN 客户端。
@@ -170,11 +170,12 @@ set JAVA_HOME=<JDK 17~21 的安装目录>
 gradlew.bat assembleDebug
 ```
 
-产物：`app\build\outputs\apk\debug\app-debug.apk`（约 18.4 MB）。
+产物：`app\build\outputs\apk\debug\app-universal-debug.apk`（约 21 MB）。
 分发包：`app\build\dist\掌上成理-debug.apk`（`assembleDebug` 后自动复制）。
-仓库内同时保留一份最新分发包：`dist\掌上成理-debug.apk`，可直接从 GitHub 下载。
+APK 统一走 Gitee Release 资产，仓库不再保存 APK。
 
-> 注意：Java 25 会被当前 Gradle / Kotlin 版本拒绝，构建前请把 `JAVA_HOME` 指向 JDK 21。
+> 注意：Java 25 会被当前 Gradle / Kotlin 版本拒绝；本仓库的 `gradlew.bat` 直接调用 PATH 里的 `java`，
+> 需用 JDK 21 的 `java.exe` 启动 wrapper，或把 PATH 中的 `java` 指向 JDK 21。
 
 ## 已知限制
 
