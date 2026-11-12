@@ -2,6 +2,7 @@ package com.yh.schedule.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -210,9 +212,18 @@ fun QueryCenterScreen(
     onOpenCourseSearch: () -> Unit = {},
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    val savedOrder by repo.queryOrder.collectAsState(initial = "")
-    var entries by remember(savedOrder) {
-        mutableStateOf(reorderQueries(QUERIES, savedOrder))
+    // 首次读取 DataStore 完成前不要渲染网格：否则会先画默认顺序，
+    // 下一帧再跳到用户保存的顺序，看起来就是模块自己换位置。
+    val savedOrder by repo.queryOrder.collectAsState(initial = null)
+    val order = savedOrder
+    if (order == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+    var entries by remember(order) {
+        mutableStateOf(reorderQueries(QUERIES, order))
     }
     val scope = rememberCoroutineScope()
 
