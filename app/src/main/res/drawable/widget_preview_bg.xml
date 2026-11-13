@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 预览背景：与 Glance 的 surface + 20dp 圆角保持一致，避免选择器里是直角白块 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#F7F5FB" />
+    <corners android:radius="20dp" />
+</shape>

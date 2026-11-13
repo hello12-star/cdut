@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件选择器里的静态预览。
+     Glance 不支持自动生成缩略图，这份布局只是示意图；
+     注意：宿主会用 RemoteViews 解析它，只能用 LinearLayout / TextView 这类受支持的控件，
+     不能用 Space、ConstraintLayout 等，否则会报 "Couldn't add widget"。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_preview_bg"
+    android:padding="12dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="今日课程"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:textColor="#1B1B1F" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="08:10  高等数学（B）（1）·（宜）乙103"
+        android:textSize="13sp"
+        android:textColor="#1B1B1F" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="10:15  大学英语I · 乙508"
+        android:textSize="13sp"
+        android:textColor="#1B1B1F" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="14:30  中国近现代史纲要 · 甲A102"
+        android:textSize="13sp"
+        android:textColor="#1B1B1F" />
+</LinearLayout>

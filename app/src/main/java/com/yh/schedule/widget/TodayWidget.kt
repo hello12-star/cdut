@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.Dp
 import com.yh.schedule.MainActivity
 
 import com.yh.schedule.core.Course
+import com.yh.schedule.core.SchoolCalendar
 import com.yh.schedule.core.SessionStore
 import com.yh.schedule.core.TimetableExporter
 import kotlinx.serialization.json.Json
@@ -65,10 +66,13 @@ class TodayWidget : GlanceAppWidget() {
         val store = SessionStore(context)
         val raw = store.timetableJson() ?: return emptyList()
         val all = runCatching { Json.decodeFromString<List<Course>>(raw) }.getOrDefault(emptyList())
+        // 直接从 DataStore 读学期起始日：桌面刷新时应用进程可能没启动，
+        // 内存里的 SchoolCalendar.termStartMonday 只是默认值，会算错周次。
+        val termStart = store.termStartMonday()
+            ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            ?: SchoolCalendar.DEFAULT_TERM_START_MONDAY
         val today = LocalDate.now()
-        val week = (ChronoUnit.WEEKS.between(
-            com.yh.schedule.core.SchoolCalendar.termStartMonday, today,
-        ).toInt() + 1).coerceIn(1, 30)
+        val week = (ChronoUnit.WEEKS.between(termStart, today).toInt() + 1).coerceIn(1, 30)
         val dow = today.dayOfWeek.value
         return all.filter { it.dayOfWeek == dow && TimetableExporter.weeksOf(it).contains(week) }
             .sortedBy { it.startTime }
