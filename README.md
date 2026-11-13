@@ -4,7 +4,7 @@
 
 **当前版本：0.2.2（debug）** ｜ 最低系统：Android 8.0（API 26） ｜ 包名：`com.yh.schedule`
 
-**下载安装包：[掌上成理 0.2.2-debug.apk](https://gitee.com/hellogitee-star/cdut/releases/download/Android/cdut-helper-0.2.2-debug.apk)**
+**下载安装包：[掌上成理 0.2.2-debug.apk](https://gitee.com/hellogitee-star/cdut/releases/download/v0.2.2/cdut-helper-0.2.2-debug.apk)**
 
 > 个人自用工具，不上架应用商店。密码经 Android Keystore 加密后保存，
 > 教务登录全部在官方 WebView 页面完成。
@@ -25,11 +25,14 @@
 
 ## 下载与安装
 
-1. 从 Gitee Release 下载 [掌上成理 0.2.2](https://gitee.com/hellogitee-star/cdut/releases/tag/Android)
+1. 从 Gitee Release 下载 [掌上成理 0.2.2](https://gitee.com/hellogitee-star/cdut/releases/tag/v0.2.2)
    （`cdut-helper-0.2.2-debug.apk`，约 20 MB，可覆盖旧版升级）。
 2. 手机允许「安装未知来源应用」后安装。
 3. 打开 App → 统一身份认证登录（学号 + 密码）。
    校外或使用流量时会自动走 WebVPN，无需安装任何 VPN 客户端。
+
+> 0.2.2 起每个版本使用独立 Release 页面（`v0.2.2`、`v0.2.3`…）；
+> 历史版本归档在 [Android](https://gitee.com/hellogitee-star/cdut/releases/tag/Android)。
 
 > 演示模式：登录页点「演示模式进入」，内置宜宾校区楼栋命名（甲 / 乙 / 丙楼）的示例数据，
 > 不影响任何真实账号。

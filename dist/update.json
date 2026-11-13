@@ -1,7 +1,7 @@
 {
     "versionCode":  13,
     "versionName":  "0.2.2",
-    "apkUrl":  "https://gitee.com/hellogitee-star/cdut/releases/download/Android/cdut-helper-0.2.2-debug.apk",
+    "apkUrl":  "https://gitee.com/hellogitee-star/cdut/releases/download/v0.2.2/cdut-helper-0.2.2-debug.apk",
     "sha256":  "2b48eb9c46c143eb129d0a4ae9660a86b0705e1f2bcf509c03dd1e7814066ddb",
     "size":  21089518,
     "changelog":  "0.2.2：新增 bsdiff 增量更新，优先下载小体积补丁，失败自动回退完整安装包；本版继续使用 debug 签名以支持覆盖升级。安装包为 universal（约 20MB，可覆盖旧版直接升级）。",
