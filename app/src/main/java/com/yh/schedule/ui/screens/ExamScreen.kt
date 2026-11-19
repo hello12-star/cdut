@@ -1,6 +1,9 @@
 package com.yh.schedule.ui.screens
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -37,6 +41,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -49,6 +54,7 @@ import com.yh.schedule.data.Repository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 /**
  * 考试安排（0.2.0 结构化版）。
@@ -70,6 +76,8 @@ fun ExamScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var loaded by remember { mutableStateOf(false) }
     var tick by remember { mutableIntStateOf(0) }
+    var loginRequired by remember { mutableStateOf(false) }
+    var creds by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     suspend fun loadLocal() {
         exams = repo.exams()
@@ -78,6 +86,7 @@ fun ExamScreen(
 
     LaunchedEffect(Unit) {
         loadLocal()
+        creds = repo.savedCredentials()
         // 没缓存且已登录 → 自动抓一次，省得用户还要手动点刷新
         if (exams.isEmpty() && repo.loggedIn.first()) {
             NetworkAccess.ready.first { it }
@@ -116,7 +125,34 @@ fun ExamScreen(
                 checking = false
                 error = msg
             },
+            onLoginRequired = {
+                checking = false
+                loginRequired = true
+            },
         )
+    }
+
+    if (loginRequired) {
+        val saved = creds
+        if (saved == null) {
+            LaunchedEffect(Unit) {
+                loginRequired = false
+                checking = false
+                error = "登录已过期，请点右上角外链登录后重试"
+            }
+        } else {
+            AutoLoginRefresher(account = saved.first, password = saved.second) { ok ->
+                loginRequired = false
+                if (ok) {
+                    error = null
+                    checking = true
+                    tick++
+                } else {
+                    checking = false
+                    error = "自动恢复登录失败，请点右上角外链重新登录"
+                }
+            }
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -148,6 +184,14 @@ fun ExamScreen(
             LinearProgressIndicator(Modifier.fillMaxWidth())
             Text(
                 "正在读取教务考试安排…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            )
+        } else if (loginRequired) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(
+                "登录已过期，正在自动恢复登录…",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -198,9 +242,16 @@ fun ExamScreen(
                 val grouped = exams.groupBy { it.date }.toSortedMap()
                 grouped.forEach { (date, list) ->
                     item(key = "h-$date") {
+                        val days = ChronoUnit.DAYS.between(LocalDate.now(), date)
+                        val suffix = when {
+                            days < 0L -> "（已结束）"
+                            days == 0L -> "（今天）"
+                            days == 1L -> "（明天）"
+                            else -> "（${days} 天后）"
+                        }
                         Text(
-                            "${SchoolCalendar.chineseDay(date.dayOfWeek)} · ${date.monthValue}月${date.dayOfMonth}日" +
-                                    if (date.isBefore(LocalDate.now())) "（已结束）" else "",
+                            "${SchoolCalendar.chineseDay(date.dayOfWeek)} · " +
+                                    "${date.monthValue}月${date.dayOfMonth}日$suffix",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold,
@@ -218,6 +269,7 @@ fun ExamScreen(
 
 @Composable
 private fun ExamRow(exam: Exam) {
+    val context = LocalContext.current
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -240,8 +292,28 @@ private fun ExamRow(exam: Exam) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (exam.room.isNotBlank()) {
+                TextButton(onClick = { openExamMap(context, exam.room) }) {
+                    Icon(
+                        Icons.Filled.Place,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    Text("导航")
+                }
+            }
         }
     }
+}
+
+/** 用地图 App 搜索「成都理工大学 + 考场」；没有地图 App 时回退到高德网页 */
+private fun openExamMap(context: Context, room: String) {
+    val query = Uri.encode("成都理工大学 $room")
+    val geo = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$query"))
+    val web = Intent(Intent.ACTION_VIEW, Uri.parse("https://uri.amap.com/search?keyword=$query"))
+    runCatching { context.startActivity(geo) }
+        .onFailure { runCatching { context.startActivity(web) } }
 }
 
 /**
@@ -254,6 +326,7 @@ private fun ExamScraper(
     tick: Int,
     onRows: (List<List<String>>) -> Unit,
     onFail: (String) -> Unit,
+    onLoginRequired: () -> Unit,
 ) {
     androidx.compose.runtime.key(tick) {
         AndroidView(
@@ -274,6 +347,12 @@ private fun ExamScraper(
                         onFail(msg)
                     }
 
+                    fun requireLogin() {
+                        if (finished) return
+                        finished = true
+                        onLoginRequired()
+                    }
+
                     fun grab() {
                         if (finished) return
                         evaluateJavascript(EXAM_JS) { raw ->
@@ -285,7 +364,7 @@ private fun ExamScraper(
                                 return@evaluateJavascript
                             }
                             if (json.optBoolean("notLogin")) {
-                                fail("登录已过期（教务返回未登录）")
+                                requireLogin()
                                 return@evaluateJavascript
                             }
                             if (json.optBoolean("ok")) {
@@ -314,7 +393,16 @@ private fun ExamScraper(
 
                     webViewClient = object : android.webkit.WebViewClient() {
                         override fun onPageFinished(v: android.webkit.WebView?, url: String?) {
-                            postDelayed({ grab() }, 2500)
+                            // 首屏可能只有筛选表单：先点一次「查询」，再抓结果表
+                            postDelayed({
+                                evaluateJavascript(EXAM_AUTO_QUERY_JS) { raw ->
+                                    android.util.Log.i(
+                                        "ExamScrape",
+                                        "autoQuery=" + decodeJsString(raw),
+                                    )
+                                    postDelayed({ grab() }, 1800)
+                                }
+                            }, 800)
                         }
                     }
                     loadUrl(WebConst.JW_EXAM_URL)
@@ -330,6 +418,32 @@ private fun ExamScraper(
         )
     }
 }
+
+/** 首屏只有筛选表单时，自动点一次「查询 / 搜索」 */
+private const val EXAM_AUTO_QUERY_JS = """
+(function(){
+  function norm(s){ return (s||'').replace(/\s+/g,''); }
+  function tryDoc(d){
+    if(!d) return null;
+    var els = d.querySelectorAll('button, input[type=button], input[type=submit], a');
+    for(var i=0;i<els.length;i++){
+      var t = norm((els[i].innerText||'') + ' ' + (els[i].value||''));
+      if((t.indexOf('查询')>=0 || t.indexOf('搜索')>=0) && t.length<=8){
+        els[i].click();
+        return 'CLICKED:' + t;
+      }
+    }
+    return null;
+  }
+  var r = tryDoc(document);
+  if(r) return r;
+  var fs = document.querySelectorAll('iframe, frame');
+  for(var i=0;i<fs.length;i++){
+    try { var d = fs[i].contentDocument; var x = tryDoc(d); if(x) return x; } catch(e) {}
+  }
+  return 'NO_BUTTON';
+})()
+"""
 
 private const val EXAM_JS = """
 (function(){
@@ -368,6 +482,12 @@ private const val EXAM_JS = """
         rows.push(row);
       }
       if (rows.length >= 1) return JSON.stringify({ok:true, rows:rows});
+    }
+  }
+  var hints = ['账号密码登录','手机动态码登录','统一身份认证','忘记密码','激活账号'];
+  for (var h = 0; h < hints.length; h++) {
+    if (loginText.indexOf(hints[h]) >= 0) {
+      return JSON.stringify({ok:false, notLogin:true, rows:[]});
     }
   }
   if (loginText.indexOf('flag1') >= 0 || loginText.indexOf('msgContent') >= 0) {
