@@ -2,11 +2,11 @@
 
 成都理工大学校园课表与日程助手（Android · Kotlin · Jetpack Compose）。
 
-**当前版本：0.2.3（debug）** ｜ 最低系统：Android 8.0（API 26） ｜ 包名：`com.yh.schedule`
+**当前版本：0.2.4（debug）** ｜ 最低系统：Android 8.0（API 26） ｜ 包名：`com.yh.schedule`
 
-**下载安装包：[掌上成理 0.2.3-debug.apk](https://gitee.com/hellogitee-star/cdut/releases/download/v0.2.3/cdut-helper-0.2.3-debug.apk)**
+**下载安装包：[掌上成理 0.2.4-debug.apk](https://gitee.com/hellogitee-star/cdut/releases/download/v0.2.4/cdut-helper-0.2.4-debug.apk)**
 
-> 0.2.3：修复查询中心首次进入模块跳动；修复小组件周次按学期起始日计算。
+> 0.2.4：新增前一天 22:00 上课/考试日历提醒；考试安排支持静默恢复登录、倒计时与考场导航；小组件支持手动刷新和明日课程提示。
 
 > 个人自用工具，不上架应用商店。密码经 Android Keystore 加密后保存，
 > 教务登录全部在官方 WebView 页面完成。
@@ -24,11 +24,13 @@
 | 设置 | 学期起始日、清除课表缓存、JSON 备份 / 恢复、无限滚轮、预测性返回 |
 | 自动刷新登录 | 可选；先进入主页，再用已保存账密后台刷新一次 CAS；失败在聚焦页提示（默认关闭） |
 | 应用内更新 | 检查 Gitee/GitHub 的 `update.json`；优先下载 bsdiff 增量补丁，失败自动回退完整包；下载后校验 SHA256 并拉起系统安装器 |
+| 提醒 | 把有课/有考试的日期写入系统日历，前一天 22:00 由日历通知；可一键清除本应用写入的提醒 |
+| 考试安排 | 教务考试页自动恢复登录，按日期分组，显示「明天 / X 天后」倒计时与考场导航 |
 
 ## 下载与安装
 
-1. 从 Gitee Release 下载 [掌上成理 0.2.3](https://gitee.com/hellogitee-star/cdut/releases/tag/v0.2.3)
-   （`cdut-helper-0.2.3-debug.apk`，约 20 MB，可覆盖旧版升级）。
+1. 从 Gitee Release 下载 [掌上成理 0.2.4](https://gitee.com/hellogitee-star/cdut/releases/tag/v0.2.4)
+   （`cdut-helper-0.2.4-debug.apk`，约 20 MB，可覆盖旧版升级）。
 2. 手机允许「安装未知来源应用」后安装。
 3. 打开 App → 统一身份认证登录（学号 + 密码）。
    校外或使用流量时会自动走 WebVPN，无需安装任何 VPN 客户端。
@@ -191,6 +193,7 @@ APK 统一走 Gitee Release 资产，仓库不再保存 APK。
 - 「成绩统计」是本地汇总页；真实成绩明细在查询中心的「成绩查询」原生页。
 - 校外依赖浏览器版 WebVPN（`vpn.cdut.edu.cn`），无需安装 VPN 客户端。
 - debug 签名，仅个人分发；换账号 / 真机复验仍待补测。
+- 日历提醒依赖系统日历的通知权限；首次同步需要授予读取/写入日历权限。若手机没有可写日历，应用会自动创建一个本地「掌上成理」日历。
 
 ## 结构
 
