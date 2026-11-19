@@ -1,5 +1,6 @@
 package com.yh.schedule.ui.screens
 
+import android.Manifest
 import android.webkit.CookieManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
@@ -67,6 +69,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.yh.schedule.core.ReminderCalendar
 import com.yh.schedule.core.SchoolCalendar
 import com.yh.schedule.core.UpdateManager
 import com.yh.schedule.core.WebConst
@@ -174,6 +177,72 @@ fun OptionsScreen(
                     showRestoreConfirm = true
                 }
             }
+        }
+    }
+
+    var calendarAction by remember { mutableStateOf<String?>(null) }
+
+    fun clearReminders() {
+        scope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) { ReminderCalendar.clear(context) }
+            }
+            Toast.makeText(
+                context,
+                if (result.isSuccess) "已清除本应用写入的提醒"
+                else "清除失败：${result.exceptionOrNull()?.message.orEmpty()}",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    fun syncReminders() {
+        scope.launch {
+            val result = runCatching {
+                val courses = repo.timetable(SchoolCalendar.currentWeek())
+                val exams = repo.exams()
+                if (courses.isEmpty() && exams.isEmpty()) return@runCatching -1
+                withContext(Dispatchers.IO) {
+                    ReminderCalendar.sync(context, courses, exams, termStart)
+                }
+            }
+            result.onSuccess { count ->
+                Toast.makeText(
+                    context,
+                    if (count < 0) "没有可同步的课程或考试，请先刷新课表/考试"
+                    else "已写入 $count 天提醒；系统日历会在前一天 22:00 通知",
+                    Toast.LENGTH_LONG,
+                ).show()
+            }.onFailure {
+                Toast.makeText(context, "同步失败：${it.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val calendarPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { result ->
+        val granted = result[Manifest.permission.READ_CALENDAR] == true &&
+                result[Manifest.permission.WRITE_CALENDAR] == true
+        if (granted) {
+            when (calendarAction) {
+                "sync" -> syncReminders()
+                "clear" -> clearReminders()
+            }
+        } else {
+            Toast.makeText(context, "需要日历权限才能写入/清除提醒", Toast.LENGTH_LONG).show()
+        }
+        calendarAction = null
+    }
+
+    fun askCalendar(action: String) {
+        if (ReminderCalendar.hasPermission(context)) {
+            if (action == "sync") syncReminders() else clearReminders()
+        } else {
+            calendarAction = action
+            calendarPermissionLauncher.launch(
+                arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR),
+            )
         }
     }
 
@@ -300,6 +369,24 @@ fun OptionsScreen(
 
                     else -> {}
                 }
+            }
+        }
+
+        item {
+            OptionSection("提醒") {
+                OptionRow(
+                    icon = Icons.Filled.Notifications,
+                    title = "同步上课/考试提醒",
+                    subtitle = "前一天 22:00 由系统日历通知；需日历权限",
+                    onClick = { askCalendar("sync") },
+                )
+                OptionDivider()
+                OptionRow(
+                    icon = Icons.Filled.Delete,
+                    title = "清除已同步提醒",
+                    subtitle = "只删除本应用写入的日历提醒",
+                    onClick = { askCalendar("clear") },
+                )
             }
         }
 
