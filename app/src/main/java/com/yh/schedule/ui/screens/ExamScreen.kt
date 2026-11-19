@@ -1,9 +1,6 @@
 package com.yh.schedule.ui.screens
 
 import android.annotation.SuppressLint
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +17,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,7 +37,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -269,51 +264,29 @@ fun ExamScreen(
 
 @Composable
 private fun ExamRow(exam: Exam) {
-    val context = LocalContext.current
     Card(
         Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
         ),
     ) {
-        Row(
-            Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(exam.course, style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(2.dp))
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+            Text(exam.course, style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                exam.timeRange.ifBlank { "时间待教务公布" },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (exam.room.isNotBlank()) {
                 Text(
-                    listOfNotNull(
-                        exam.timeRange.takeIf { it.isNotBlank() },
-                        exam.room.takeIf { it.isNotBlank() },
-                    ).joinToString(" · ").ifBlank { "时间/考场待教务公布" },
+                    "考场：${exam.room}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (exam.room.isNotBlank()) {
-                TextButton(onClick = { openExamMap(context, exam.room) }) {
-                    Icon(
-                        Icons.Filled.Place,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.width(2.dp))
-                    Text("导航")
-                }
-            }
         }
     }
-}
-
-/** 用地图 App 搜索「成都理工大学 + 考场」；没有地图 App 时回退到高德网页 */
-private fun openExamMap(context: Context, room: String) {
-    val query = Uri.encode("成都理工大学 $room")
-    val geo = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$query"))
-    val web = Intent(Intent.ACTION_VIEW, Uri.parse("https://uri.amap.com/search?keyword=$query"))
-    runCatching { context.startActivity(geo) }
-        .onFailure { runCatching { context.startActivity(web) } }
 }
 
 /**
